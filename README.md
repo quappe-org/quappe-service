@@ -18,7 +18,7 @@ npm run dev          # http://localhost:5273  (seeds ~200 demo theses)
 ```
 
 **Kubernetes (production target):** deploy the published image
-`DOCKERHUB_USER/quappe-service` with a PersistentVolume mounted at `/data`
+`quappeorg/quappe-service` with a PersistentVolume mounted at `/data`
 (SQLite + model cache) and `QUAPPE_SECRET` from a Secret. Topology and manifests:
 **[quappe-docs / running.md](https://github.com/quappe-org/quappe-docs/blob/main/running.md)**
 (Docker packaging + CI details there too).
