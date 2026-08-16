@@ -34,8 +34,9 @@ is the point. Attacking people instead of positions is not.
 ## Reporting
 
 Report violations by opening a report to the repository admins (GitHub:
-"Report content") or, for sensitive matters, via a private
-[security advisory](https://github.com/quappe-org/quappe/security/advisories/new)
+"Report content"), by emailing **quappe-org@proton.me**, or for sensitive
+matters via a private
+[security advisory](https://github.com/quappe-org/quappe-service/security/advisories/new)
 so it reaches the maintainers privately. Reports are handled confidentially.
 
 ## Enforcement

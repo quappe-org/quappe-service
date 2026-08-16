@@ -48,7 +48,7 @@ outside "OSI open source" so we can be explicit about the intent:
 ## Commercial licensing
 
 If you want to use Quappe commercially, you need a separate license.
-Open an issue on the repository or contact the maintainers.
+Email **quappe-org@proton.me** or open an issue on the repository.
 
 ## Contributions
 

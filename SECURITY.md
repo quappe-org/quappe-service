@@ -8,7 +8,8 @@
 Please report security issues **privately** — do not open a public issue.
 
 - Preferred: open a private
-  [security advisory](https://github.com/quappe-org/quappe/security/advisories/new).
+  [security advisory](https://github.com/quappe-org/quappe-service/security/advisories/new).
+- Or email **quappe-org@proton.me**.
 - Include: what you found, how to reproduce it, and the potential impact.
 
 We aim to acknowledge reports promptly and will keep you updated as we

@@ -10,21 +10,18 @@ server-minted JWT cookie. Semantic search uses `@huggingface/transformers`
 
 ## Quick start
 
+**Local (development):**
+
 ```bash
 npm install
 npm run dev          # http://localhost:5273  (seeds ~200 demo theses)
 ```
 
-Or with Docker:
-
-```bash
-docker build -t quappe-service .
-docker run -p 3000:3000 -e QUAPPE_SECRET=change-me -v quappe-data:/data quappe-service
-```
-
-CI pushes images to Docker Hub on `main` + version tags (`v*`). Full instructions
-— local, build, Docker, Kubernetes — are in the platform runbook:
-**[quappe-docs / running.md](https://github.com/quappe-org/quappe-docs/blob/main/running.md)**.
+**Kubernetes (production target):** deploy the published image
+`DOCKERHUB_USER/quappe-service` with a PersistentVolume mounted at `/data`
+(SQLite + model cache) and `QUAPPE_SECRET` from a Secret. Topology and manifests:
+**[quappe-docs / running.md](https://github.com/quappe-org/quappe-docs/blob/main/running.md)**
+(Docker packaging + CI details there too).
 
 Other commands: `npm run dev:all` (+ ollama for LLM features), `npm run check`
 (type check).
