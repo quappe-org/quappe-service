@@ -14,11 +14,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 	&& rm -rf /var/lib/apt/lists/*
 
 COPY package*.json ./
-RUN npm ci
+# --ignore-scripts: the `prepare` hook (svelte-kit sync + paraglide compile)
+# needs project files that aren't copied yet; we run it explicitly after COPY.
+RUN npm ci --ignore-scripts
 
 COPY . .
-# `prepare`/paraglide compile runs via npm; build emits ./build (adapter-node).
-RUN npm run build \
+# Generate the git-ignored paraglide output, then build. paraglide + sync now
+# have project.inlang / messages / the full source available.
+RUN npm run paraglide:compile \
+	&& npx svelte-kit sync \
+	&& npm run build \
 	&& npm prune --omit=dev
 
 # ---- runtime ----
