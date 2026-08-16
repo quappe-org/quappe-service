@@ -20,10 +20,13 @@ RUN npm ci --ignore-scripts
 
 COPY . .
 # Generate the git-ignored paraglide output, then build. paraglide + sync now
-# have project.inlang / messages / the full source available.
+# have project.inlang / messages / the full source available. Rebuild the native
+# better-sqlite3 addon for this platform (npm ci ran with --ignore-scripts, so
+# the prebuilt binding was never compiled) before pruning dev deps.
 RUN npm run paraglide:compile \
 	&& npx svelte-kit sync \
 	&& npm run build \
+	&& npm rebuild better-sqlite3 \
 	&& npm prune --omit=dev
 
 # ---- runtime ----
