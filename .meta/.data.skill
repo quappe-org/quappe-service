@@ -1,0 +1,226 @@
+# Object types
+
+## Thesis
+Central entity. A claim, question or subject to discuss.
+
+Fields:
+- `id`: UUID
+- `title`: string
+- `description`: string
+- `categories`: string[] (dynamic list, admin-managed)
+- `votes`: Vote[] (support | reject | neutral)
+- `related_thesis_ids`: string[] (graph edges to other Theses)
+- `archived`: boolean (admin can archive, not delete)
+- `lifecycle`: LifecycleInfo (see Lifecycle section)
+- `meta`: Meta
+
+## Argument
+Supports or rejects a Thesis.
+
+Fields:
+- `id`: UUID
+- `thesis_id`: UUID (parent thesis)
+- `stance`: 'support' | 'reject' (mandatory - one column per stance on the UI)
+- `content`: string (the argument text)
+- `attributes`: ArgumentAttribute[] (evidence_type + optional source_url + optional source_comment)
+- `votes`: Vote[]
+- `forked_from_id?`: UUID (points to source argument if this is a fork; must be from same thesis + same stance)
+- `meta`: Meta
+
+Notes:
+- No parent-child reply chains. **Fork = create a new argument variant based on an existing one**. Both coexist as one *argument group* (root + variants).
+- An argument group renders as ONE card: the leading variant (most support) is shown; the card expands into a radio-list picker (sorted Top / Latest, capped by the complexity slider, "+N more" hint for the rest). A user has ONE vote per group — voting a variant retracts their vote on siblings (enforced server-side in `voteOnArgument` via the fork-family walk).
+- Forking migrates the author's vote to the new variant automatically.
+- Arguments per Thesis are limited by the complexity slider (Fibonacci: 1 to 8 per stance).
+- Arguments inherit their thesis's lifecycle state implicitly.
+
+
+## Vote
+Fields:
+- `user_id`: anonymous UUID (persisted in browser localStorage)
+- `type`: 'support' | 'reject' | 'neutral'
+- `weight`: integer >= 1 (default 1). Additional weight costs 1 budget point per extra weight (from the matching stance bucket - support or reject). Retracting a weighted vote refunds nothing (design: extra weight is a signal, not a stake).
+- `cast_at`: ISO timestamp
+
+Rules:
+- Each user has one active vote per Thesis or Argument.
+- Casting the same `(type, weight)` again retracts the vote (toggle).
+- Casting the same type with a different weight re-weights the vote in place.
+- Weight is capped at 5 server-side, and 3 in the standard UI.
+- Reading a vote is always free. Casting `weight=1` is free. Casting `weight=k` costs `k-1` budget points from the matching bucket.
+
+
+## Meta
+Every object has:
+- `created_at`: ISO timestamp
+- `updated_at`: ISO timestamp
+- `author_id`: anonymous UUID
+- `location?`: coarse-grained (country/region, never precise)
+
+
+# Lifecycle
+
+Theses go through a deterministic lifecycle. State is a **pure function** of age, votes, arguments, and last activity - no I/O, no history required.
+
+## States
+
+| State | Meaning | Storage tier |
+|-------|---------|--------------|
+| `seedling` | Newly created (< 7 d), gathering initial reactions | hot |
+| `discussed` | Healthy activity, no clear consensus yet | hot |
+| `contested` | Active but polarised (support ≈ reject, split ≤ 20 %) | hot |
+| `crystallized` | Clear majority (≥ 65 %) + solid arguments (≥ 3) | hot |
+| `faded` | Activity dropped, no consensus reached | warm |
+| `dormant` | Inactive for 90+ days | cold |
+
+Canonical (long-term crystallised) is planned for a later phase.
+
+## LifecycleInfo (stored on each thesis)
+
+- `state`: LifecycleState
+- `state_since`: ISO timestamp of the last state change
+- `quality_score`: number in [0..1] (see Quality Score below)
+
+## Transition thresholds (single source of truth in `lib/models/lifecycle.ts`)
+
+- `seedlingMaxDays`: 7
+- `seedlingMinVotes`: 3 (below after 14 d ⇒ faded)
+- `discussedMinVotes`: 5 (needed to leave seedling)
+- `crystallizedMinVotes`: 20
+- `crystallizedMinArgs`: 3
+- `crystallizedConsensus`: 0.65 (support/(support+reject) ≥ this)
+- `contestedSplitBand`: 0.2 (|support-reject|/(support+reject) ≤ this)
+- `fadedInactivityDays`: 30
+- `dormantInactivityDays`: 90
+
+## Quality Score
+
+`quality = 0.15·consensus_strength + 0.35·argument_depth + 0.25·peer_engagement + 0.25·evidence_density`
+
+Philosophy: quality is the DEPTH and GROUNDEDNESS of the debate, not agreement.
+A controversial-but-well-argued thesis scores high; consensus is only a weak
+signal so we neither reward echo chambers nor punish honest disagreement.
+
+- `consensus_strength`: how far the support ratio is from 0.5, scaled 0..1 (weak weight)
+- `argument_depth`: `min(1, arg_count/8)` (Fibonacci saturation)
+- `peer_engagement`: `min(1, unique_voters/21)` (Fibonacci; counts people, Sybil-resistant)
+- `evidence_density`: fraction of arguments carrying "study" or "authority" evidence
+
+Steers ranking on `/top` (which now INCLUDES `contested` theses) and, later,
+similarity matching. A decaying **germination boost** (peak 8, ~1.5-day
+half-life) is added to `/top` and trending ranking so fresh, well-argued
+positions can surface beside established ones — the structural nudge that lets
+a good minority position sprout. Vote direction is treated neutrally
+(support == reject for visibility); we trust the majority to sort meaning.
+
+
+# Storage tiers
+
+State lives in SQLite (`.data/quappe.db`, better-sqlite3, WAL). Tier is
+**derived, not stored** — every "tier" query filters by `lifecycle_state`.
+There are no separate hot/warm/cold tables.
+
+- **hot**: seedling / discussed / contested / crystallized. Surfaced in listings.
+- **warm**: faded. Reachable by link, excluded from listings.
+- **cold**: dormant. Reachable by link, quiet by default.
+
+Argument lookup by thesis is a direct indexed query (`arguments.thesis_id`),
+used by heat map, activity calendar, argument counts and delete cascade.
+
+On every mutation:
+1. The mutation is applied (via the `data.ts` façade → `src/lib/server/db/*`).
+2. `reevaluateLifecycle(thesis_id)` recomputes state + quality_score, written back.
+3. Tier follows automatically because it is derived from `lifecycle_state`.
+4. The derived-query cache is invalidated (`bumpVersion()`).
+
+
+# Input Budget
+
+Three separate daily buckets per user (browser-local, resets at midnight):
+- `thesis`: 7 per day
+- `support`: 7 support arguments per day
+- `reject`: 7 reject arguments per day
+
+Editing your own thesis or argument does not cost budget.
+Forking counts as a new argument in the respective stance bucket.
+Weighted voting: `weight=1` is free, each additional weight point costs 1 from the matching bucket
+(support-vote weight uses `support` bucket, reject-vote weight uses `reject` bucket, neutral uses `support` as default).
+
+
+# Categories
+
+Dynamic string list, managed centrally by admin.
+Default categories: education, policy, health, family, fairness, environment, economy, technology, culture, other.
+Admin can add/remove via settings page. Reset to defaults available.
+Landing page renders categories as size-scaled tiles (drill-down).
+
+
+# Argument evidence auto-detection
+
+Users do not pick an evidence type in the UI. They write their argument; the
+evidence type is derived entirely from the content.
+
+Server-side derivation (`lib/utils/evidence.ts`):
+- Extract URLs from the raw content by regex.
+  - Each URL is classified by domain:
+    - `study`: `.edu`, `.ac.*`, `doi.org`, `arxiv.org`, `nature.com`, `sciencemag.org`, `pubmed`, `nih.gov`, `who.int`, `sciencedirect.com`, `plos*.org`, `cochrane*.org`, `mpg.de`, `fraunhofer.de`, ...
+    - `authority`: `.gov`, `europa.eu`, `wikipedia.org`, `bundestag.de`, `bundesregierung.de`, `oecd.org`, `imf.org`, `worldbank.org`, `destatis.de`, `ipcc.ch`, `unicef.org`, ...
+    - Everything else (including no URL): `logical`.
+- One attribute per URL. The "primary" type for badge display is the best-ranked type
+  (study > authority > experiential > logical).
+
+Evidence types: `study | authority | logical | experiential`. There is no
+"emotional" type — emotion is expressed through voting (weight), not a badge.
+The user only chooses stance (support/reject). Everything else is derived.
+
+
+# Similarity (future)
+
+Similarity between Theses is detected automatically via a local LLM (embedding-based).
+- Clustering groups similar Theses to surface commonality.
+- Low-confidence matches are suggested but not auto-linked.
+- Implementation: local small LLM for embeddings + vector similarity search.
+
+
+# Activity / Heat
+
+Two derived metrics from raw events (votes + creates):
+- **Heat**: per-thesis ratio of 24 h activity vs. platform average. 4 levels (hot/warm/cool/cold). Rendered as colored left-border on ThesisCard. Computed only over the hot tier - warm/cold theses are, by definition, inactive.
+- **Activity Streamgraph**: daily buckets over the last 84 days, 4 stacked series (support, creates, neutral, reject) with 5-day rolling average. Context-aware (platform-wide or per-thesis). Rendered in the right sidebar.
+
+Both metrics are cached (30 s TTL) and invalidated on writes.
+
+
+# Scale (stress-tested)
+
+Target: max one country per instance (~80M users).
+Expected volume at scale: ~100M theses. Similarity clustering is essential.
+
+Stress test with 1 000 000 theses (~1.85 M arguments, ~17.5 M vote objects, 50 000 users):
+
+- Seed + lifecycle sweep: ~23 s once at boot.
+- Heap: ~3.6 GB (all in memory).
+- Tier distribution (with the seeded age profile): ~35 % hot, ~45 % warm, ~20 % cold.
+- Hot-tier queries: `getTrendingTheses(200)` ~85 ms, `getTopTheses(200)` ~160 ms.
+- Cross-tier queries: `getHeatMap()` ~2 s cold, ~0 ms cached.
+- Per-thesis queries: `getActivityCalendar(thesisId)` ~15 ms.
+
+This is the ceiling for a single Node process without persistence. Beyond ~2 M theses in RAM, a proper DB is required (see Phase 2 in `.project`).
+
+
+# Storage / Load
+
+- MVP: in-memory Maps + reverse index for arguments. Seeded lazily on first read (~100 example theses).
+- Phase 2+: persistent DB (Postgres + likely a vector DB for similarity).
+- We don't need strict transactional safety. Best-effort is fine.
+- History is stored as a changelog (event-sourcing style), not full snapshots.
+
+
+# Retention
+
+Since this is a social experiment, discussions should be traceable over years / decades:
+- Time graph indicates peaks in discussion.
+- Color shifts show change in tone / direction.
+- Active discussion in cache; older material in cold storage.
+- Dormant theses are kept as cold references (ID + summary) and can be reactivated on new engagement.
+

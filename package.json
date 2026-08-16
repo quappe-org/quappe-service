@@ -1,0 +1,38 @@
+{
+	"name": "quappe-service",
+	"private": true,
+	"version": "0.1.6",
+	"type": "module",
+	"scripts": {
+		"dev": "vite dev --port 5273",
+		"dev:all": "concurrently -k -n ollama,vite -c magenta,cyan \"ollama serve\" \"vite dev --port 5273\"",
+		"ollama": "ollama serve",
+		"build": "vite build",
+		"preview": "vite preview",
+		"prepare": "svelte-kit sync && paraglide-js compile --project ./project.inlang --outdir ./src/lib/paraglide --strategy cookie url preferredLanguage baseLocale || echo ''",
+		"paraglide:compile": "paraglide-js compile --project ./project.inlang --outdir ./src/lib/paraglide --strategy cookie url preferredLanguage baseLocale",
+		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch"
+	},
+	"devDependencies": {
+		"@inlang/paraglide-js": "^2.20.2",
+		"@sveltejs/adapter-auto": "^7.0.1",
+		"@sveltejs/kit": "^2.63.0",
+		"@sveltejs/vite-plugin-svelte": "^7.1.2",
+		"@types/better-sqlite3": "^7.6.13",
+		"@types/node": "^26.0.1",
+		"concurrently": "^10.0.3",
+		"svelte": "^5.56.1",
+		"svelte-check": "^4.6.0",
+		"typescript": "^6.0.3",
+		"vite": "^8.0.16"
+	},
+	"dependencies": {
+		"@huggingface/transformers": "^4.2.0",
+		"better-sqlite3": "^12.11.1"
+	},
+	"allowScripts": {
+		"@huggingface/transformers": true,
+		"better-sqlite3@12.11.1": true
+	}
+}

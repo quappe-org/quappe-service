@@ -1,0 +1,189 @@
+# UI design language & concepts
+
+Design direction: **editorial / calm**. Quappe is a discourse platform — text
+is the product, so the UI treats text as a designed element (large serif
+headlines, generous whitespace, a centred reading column) rather than something
+to hide. Controls stay out of the way until needed. Mobile-first: one structure
+for all widths.
+
+Principles:
+- **Editorial:** serif headlines (`--font-serif`, system stack — no web font),
+  uppercase eyebrow meta lines, big type contrast, lots of margin.
+- **Progressive disclosure / calm:** show the minimum needed to decide; details
+  on demand. Chrome (budget, slider, menu) is hidden in popovers until invoked.
+- **Two axes of reader control:** amount (complexity slider, Fibonacci) and
+  density (author-provided reading registers: simple / prose / dense).
+- **Direction-neutral, humane:** support == reject for visibility; a decaying
+  germination boost lets good new positions surface. See `.project`.
+
+
+# Tech stack
+
+- SvelteKit 2 + TypeScript, Svelte 5 runes ($state/$derived/$effect/$props).
+- No CSS framework, no UI component library. Hand-written CSS with variables
+  (`src/app.css`).
+- i18n via Paraglide (en base; de/fr/es). URL-prefix strategy.
+- The UI is presentation-only: it talks to the server through page `load`
+  functions and `/api/*` only — never imports `data.ts` or server modules.
+  (Keeps `quappe-web` split-ready — see `.project` platform north star.)
+
+
+# Shell — top-down (no sidebar)
+
+Sticky top bar over a centred content column. The old left/right sidebars are
+gone (that was the "dashboard" feel we moved away from).
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│  Quappe   Trending  Top  Mine  Updates•     [+ New] ▚ ◷5 ◐ ⋯  │  row 0 (sticky, frosted)
+├──────────────────────────────────────────────────────────────┤
+│                                                                │
+│            ╔══════════════════════════════════════╗           │
+│            ║  Where positions take shape          ║           │  masthead (serif, landing only)
+│            ║  Propose a thesis, weigh arguments…   ║           │
+│            ╚══════════════════════════════════════╝           │
+│                                                                │
+│            ⌕ Search theses…                                    │  search
+│            categories · #hashtags (filter)                     │  filter row
+│                                                                │
+│            ┌───────────────┐  ┌───────────────┐                │  centred grid
+│            │ editorial card│  │ editorial card│                │  (max-width ~1000px)
+│            └───────────────┘  └───────────────┘                │
+└──────────────────────────────────────────────────────────────┘
+```
+
+Row 0 anatomy (left → right):
+- **Brand** (Logo + "Quappe"). Name hides on mobile.
+- **Primary nav** (centre-left): Trending · Top · Mine · Updates (with unread
+  badge, pulsing). Horizontally scrollable on mobile.
+- **Actions** (right):
+  - `[+ New]` primary button (label collapses to icon on mobile).
+  - Complexity slider — icon button `▚`, opens a popover with the slider.
+  - Budget — pill `◷N` showing the tightest remaining bucket; opens a popover
+    with all four buckets (theses / support args / reject args / weight pool)
+    + recent activity + link to `/my#budget`.
+  - Theme quick-toggle `◐` (invert on/off).
+  - Overflow `⋯` — popover menu: Pulse · About · Settings.
+
+Popovers are transient: close on outside click (a full-screen invisible
+backdrop), Escape, or navigation. On mobile they become bottom-sheets.
+
+
+# Views
+
+## Landing (/) — "Trending"
+Editorial masthead (serif title + subtitle) · search · category tiles
+(size-scaled drill-down) + hashtag chips · centred grid of ThesisCards.
+Complexity slider caps how many show. Live "already exists?" hints while
+creating (links open in a new tab so the half-typed form survives).
+
+## Top (/top)
+Like landing, ordered by quality + support (+ germination boost); includes
+`contested` theses. Rank badges.
+
+## My (/my) and Updates (/my/updates)
+`/my`: theses you created or voted on. `/my/updates`: a chronological feed plus
+a fork-decision carousel at the top (one vote per fork family).
+
+## Thesis detail (/thesis/[id])
+Serif title (canonical) + translate button beside it · description in the
+slider-bound register with a "Reading: simple/dense" indicator when a variant
+is shown · categories · vote row · two argument columns (Supporting | Rejecting).
+Each argument is a fork FAMILY rendered as ONE card: leading variant shown,
+expandable radio-list picker (sorted Top/Latest, capped by slider, "+N more").
+One vote per group.
+
+## About (/about)
+Own left mini-nav (sections) + reading body. No decorative image.
+
+## Settings (/settings)
+Anonymous ID · role badge · language · complexity bounds · categories mgmt.
+(Theme/invert live in the top bar now.)
+
+
+# Key components
+
+- `Logo.svelte` — `/quappe.png`, sized.
+- `ThesisCard.svelte` — editorial: uppercase eyebrow (category · lifecycle state
+  · argument count), serif headline, muted body (register-aware, slider-bound),
+  two slim left bands (heat outer, lifecycle inner, 5px), footer vote row.
+- `ArgumentCard.svelte` — represents a fork family. Content, evidence badge +
+  source chips (derived from URLs; users never pick evidence type), vote row +
+  fork/edit icons, expandable variant picker. One vote per group.
+- `VoteRow.svelte` — support/reject/neutral. Weight cycles the Fibonacci ladder
+  1→2→3→5→8→reset. Base weight-1 is free; extra weight draws the daily pool.
+- `ComplexitySlider.svelte` — discrete Fibonacci steps (theses 3·5·8·13·21·34·55,
+  args 1·2·3·5·8, related 3·5·8·13), one index drives all three.
+- `ActivityGraph.svelte` — pastel streamgraph, 5-day rolling average.
+
+
+# Design tokens (src/app.css)
+
+- Backgrounds: `--color-bg` #fafafa, `--color-surface` #fff, soft border #eaeef3.
+- Accent: primary indigo #4f46e5 (theme-swappable: rainbow/pastel/grayscale).
+- Vote colors: support green #16a34a, reject red #dc2626, neutral gray.
+- Fonts: `--font-sans` (system), `--font-serif` (system serif stack, for
+  headlines), `--font-mono` (numbers/IDs).
+- Rounded, soft edges: radii sm .4 / md .7 / lg 1 / xl 1.4 rem; diffuse
+  low-contrast shadows.
+- `data-invert="true"` on <html> flips everything (independent of theme).
+
+
+# Themes & accessibility modes
+
+Two ORTHOGONAL axes, both applied as attributes on <html>, both stored in
+localStorage, both surfaced in the header theme popover:
+
+1. **Aesthetic theme** (`data-theme`, store: `theme.svelte.ts`) — one of
+   rainbow (default, no attribute) · pastel · classic · unicorn · grayscale.
+   Pure palette swap via CSS variables.
+2. **Accessibility modes** (store: `a11y.svelte.ts`, plus the separate
+   `invert.svelte.ts`) — independent booleans that COMBINE with any theme:
+   - `data-invert` — invert all colors (dark-ish; re-inverts raster media).
+   - `data-calm` — reduced visual noise: desaturate the surface (`saturate .7`),
+     flatten shadows, remove card hover-lift, dim the decorative heat/lifecycle
+     side bands, stop the badge pulse.
+   - `data-contrast` — stronger text/border contrast, thicker card borders.
+   - `data-reduced-motion` — neutralise transitions/animations + instant scroll.
+
+## Naming decision (important — do not "simplify" back)
+Accessibility modes are named by FUNCTION, never by diagnosis or politics.
+The user asked for "ADHS / neurodivergent / conservative / unicorn" themes.
+We deliberately split that:
+- Aesthetic wishes → themes (unicorn kept; "conservative" became **classic**,
+  i.e. muted/editorial — a political label on a neutral-discourse platform sends
+  the wrong signal).
+- Access needs → functional modes (**calm** instead of "ADHS/neurodivergent").
+  Naming a mode after a diagnosis reduces people to that diagnosis, like calling
+  a ramp a "disabled mode". "Calm" helps anyone distracted by a busy UI (ADHD,
+  autism, migraine, or a noisy room) without labelling them. This is inclusive,
+  fits the humanist mission, and is the reason the modes exist.
+
+## Reduce-motion honesty
+Quappe has little real motion — the only conspicuous, repeating animation is the
+pulsing unread badge; the rest are subtle hover/popover transitions. So:
+- We respect the OS `prefers-reduced-motion` media query automatically (users
+  who set it system-wide need not find the toggle).
+- The manual toggle is an additive convenience. If richer motion is added later
+  (e.g. streamgraph transitions), both paths already cover it.
+
+
+# Interaction patterns
+
+- Voting toggles: same type+weight twice = retract. Weight cycles the Fibonacci
+  ladder; base vote is free, extra weight costs from the daily pool.
+- ThesisCard: whole card links to detail; vote buttons stop propagation.
+- Fork keeps the source's stance; forking migrates the author's vote to the new
+  variant; the family shows as one card with a variant picker.
+- Reading register follows the complexity slider (author variants, with
+  fallback to the original); a small indicator makes it legible.
+- Editing costs no budget; creating and forking do.
+- Anonymous identity is a server-minted JWT (httpOnly cookie).
+
+
+# Later (UI)
+
+- Simplified-language / TL;DR surfacing at low complexity.
+- Command palette (⌘K) as an ADDITIVE power-user path (not the only way — the
+  audience is broad, not developers).
+- PWA / installable wrapper (no native apps; the API allows 3rd-party clients).
