@@ -8,14 +8,26 @@ Headless SvelteKit: only `/api/*` routes, no UI. State lives in SQLite
 server-minted JWT cookie. Semantic search uses `@huggingface/transformers`
 (server-side embeddings).
 
-## Run
+## Quick start
 
 ```bash
 npm install
 npm run dev          # http://localhost:5273  (seeds ~200 demo theses)
-npm run dev:all      # + ollama serve (for /pulse and report LLM features)
-npm run check        # type check
 ```
+
+Or with Docker:
+
+```bash
+docker build -t quappe-service .
+docker run -p 3000:3000 -e QUAPPE_SECRET=change-me -v quappe-data:/data quappe-service
+```
+
+CI pushes images to Docker Hub on `main` + version tags (`v*`). Full instructions
+— local, build, Docker, Kubernetes — are in the platform runbook:
+**[quappe-docs / running.md](https://github.com/quappe-org/quappe-docs/blob/main/running.md)**.
+
+Other commands: `npm run dev:all` (+ ollama for LLM features), `npm run check`
+(type check).
 
 Env: `QUAPPE_SECRET` (JWT secret — set it in prod), `QUAPPE_DB_PATH`,
 `OLLAMA_URL` / `OLLAMA_MODEL` / `OLLAMA_TIMEOUT`.
