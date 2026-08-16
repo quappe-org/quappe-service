@@ -1,0 +1,505 @@
+openapi: 3.1.0
+info:
+  title: Quappe Service API
+  version: 0.1.6
+  description: >
+    The Quappe API — theses, arguments, votes, and derived reports. Single
+    source of truth for all clients (web, future CLI/app/analytics). Identity is
+    an anonymous server-minted JWT set as an httpOnly cookie (`quappe_uid`);
+    clients never send a user id — the cookie is authoritative. This spec is the
+    contract; keep it in sync when endpoints change.
+  license:
+    name: PolyForm Noncommercial 1.0.0
+    url: https://polyformproject.org/licenses/noncommercial/1.0.0
+servers:
+  - url: http://localhost:5273
+    description: Local dev (service)
+  - url: /
+    description: Via quappe-web reverse proxy (/api/* → service)
+
+tags:
+  - name: theses
+  - name: arguments
+  - name: votes
+  - name: reports
+  - name: meta
+
+paths:
+  /api/theses:
+    get:
+      tags: [theses]
+      summary: List theses (all / trending / top)
+      parameters:
+        - { name: trending, in: query, schema: { type: boolean } }
+        - { name: top, in: query, schema: { type: boolean } }
+        - { name: limit, in: query, schema: { type: integer, default: 10 } }
+      responses:
+        '200':
+          description: Array of theses
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/Thesis' } }
+    post:
+      tags: [theses]
+      summary: Create a thesis (spends the daily thesis budget)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ThesisCreate' }
+      responses:
+        '201':
+          description: Created thesis (plus suggested_categories)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Thesis' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '413': { $ref: '#/components/responses/TooLarge' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /api/theses/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      tags: [theses]
+      summary: Get a thesis by id
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Thesis' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [theses]
+      summary: Edit a thesis (author only; free — no budget cost)
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ThesisUpdate' }
+      responses:
+        '200': { content: { application/json: { schema: { $ref: '#/components/schemas/Thesis' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    delete:
+      tags: [theses]
+      summary: Delete a thesis (author only)
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/theses/{id}/vote:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      tags: [votes]
+      summary: Vote on a thesis (toggle; Fibonacci weight, base free)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VoteCast' }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  vote_summary: { $ref: '#/components/schemas/VoteSummary' }
+                  user_id: { type: string }
+                  weight: { type: integer }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /api/theses/{id}/archive:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      tags: [theses]
+      summary: Archive / unarchive a thesis (admin)
+      requestBody:
+        content: { application/json: { schema: { type: object, properties: { archived: { type: boolean } } } } }
+      responses: { '200': { $ref: '#/components/responses/Ok' } }
+
+  /api/theses/{id}/related:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: limit, in: query, schema: { type: integer, default: 7 } }
+    get:
+      tags: [theses]
+      summary: Related theses (semantic or thematic)
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  related:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        thesis: { $ref: '#/components/schemas/Thesis' }
+                        score: { type: number }
+                  mode: { type: string, enum: [semantic, thematic] }
+
+  /api/theses/{id}/translate:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: to, in: query, required: true, schema: { type: string, enum: [en, de, fr, es] } }
+    get:
+      tags: [theses]
+      summary: On-demand LLM translation of title + description (not persisted)
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  title: { type: string }
+                  description: { type: string }
+                  target: { type: string }
+        '503': { description: LLM unavailable }
+
+  /api/theses/draft-variant:
+    post:
+      tags: [theses]
+      summary: LLM draft of a simple/dense description register (author tooling)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title, description, variant]
+              properties:
+                title: { type: string }
+                description: { type: string }
+                variant: { type: string, enum: [simple, dense] }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  description: { type: string }
+                  variant: { type: string }
+        '503': { description: LLM unavailable }
+
+  /api/arguments:
+    get:
+      tags: [arguments]
+      summary: List arguments for a thesis
+      parameters:
+        - { name: thesis_id, in: query, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/Argument' } }
+    post:
+      tags: [arguments]
+      summary: Create an argument or fork variant (spends the per-stance budget)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ArgumentCreate' }
+      responses:
+        '201': { content: { application/json: { schema: { $ref: '#/components/schemas/Argument' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /api/arguments/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      tags: [arguments]
+      summary: Get an argument by id
+      responses:
+        '200': { content: { application/json: { schema: { $ref: '#/components/schemas/Argument' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [arguments]
+      summary: Edit an argument (author only)
+      requestBody:
+        content: { application/json: { schema: { type: object, properties: { content: { type: string } } } } }
+      responses:
+        '200': { content: { application/json: { schema: { $ref: '#/components/schemas/Argument' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    delete:
+      tags: [arguments]
+      summary: Delete an argument (author only)
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/arguments/{id}/vote:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      tags: [votes]
+      summary: Vote on an argument (one vote per fork group; voting a variant moves it off siblings)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VoteCast' }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  vote_summary: { $ref: '#/components/schemas/VoteSummary' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/search:
+    get:
+      tags: [theses]
+      summary: Search theses (semantic with fulltext fallback)
+      parameters:
+        - { name: q, in: query, required: true, schema: { type: string } }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results: { type: array, items: { $ref: '#/components/schemas/Thesis' } }
+                  mode: { type: string, enum: [semantic, fulltext, combined, empty] }
+
+  /api/stats:
+    get:
+      tags: [meta]
+      summary: Heat + argument-count maps for all hot theses
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  heat: { type: object, additionalProperties: { type: number } }
+                  arguments: { type: object, additionalProperties: { type: integer } }
+
+  /api/heat:
+    get:
+      tags: [meta]
+      summary: Heat map (recent-activity ratio per thesis)
+      responses:
+        '200': { content: { application/json: { schema: { type: object, additionalProperties: { type: number } } } } }
+
+  /api/activity:
+    get:
+      tags: [meta]
+      summary: Activity calendar (platform-wide or per thesis)
+      parameters:
+        - { name: thesis_id, in: query, schema: { type: string, format: uuid } }
+        - { name: days, in: query, schema: { type: integer, default: 84 } }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/ActivityDay' } }
+
+  /api/budget/today:
+    get:
+      tags: [meta]
+      summary: The caller's daily budget status + today's activity
+      responses:
+        '200': { content: { application/json: { schema: { $ref: '#/components/schemas/BudgetStatus' } } } }
+
+  /api/me:
+    get:
+      tags: [meta]
+      summary: The caller's anonymous user id (from the JWT cookie)
+      responses:
+        '200': { content: { application/json: { schema: { type: object, properties: { user_id: { type: string } } } } } }
+
+  /api/reports/me:
+    get: { tags: [reports], summary: Personal activity report, responses: { '200': { $ref: '#/components/responses/Ok' } } }
+  /api/reports/pulse:
+    get:
+      tags: [reports]
+      summary: Community pulse (LLM summary + stats, 24h-cached)
+      responses:
+        '200': { content: { application/json: { schema: { $ref: '#/components/schemas/PulseBody' } } } }
+  /api/reports/updates:
+    get:
+      tags: [reports]
+      summary: The caller's update feed (forks, new arguments, lifecycle) within 7 days
+      responses: { '200': { $ref: '#/components/responses/Ok' } }
+
+  /api/admin/logs:
+    get: { tags: [meta], summary: Ring-buffer server logs (hidden admin console), responses: { '200': { $ref: '#/components/responses/Ok' } } }
+    delete: { tags: [meta], summary: Clear the log buffer, responses: { '200': { $ref: '#/components/responses/Ok' } } }
+
+components:
+  responses:
+    Ok: { description: Success }
+    BadRequest: { description: Invalid input, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    Forbidden: { description: Not allowed (e.g. not the author), content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    NotFound: { description: Resource not found, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    TooLarge: { description: Field exceeds length cap }
+    RateLimited: { description: Rate limit or daily budget exhausted, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error: { type: string }
+
+    VoteType: { type: string, enum: [support, reject, neutral] }
+    EvidenceType: { type: string, enum: [study, authority, logical, experiential] }
+    LifecycleState: { type: string, enum: [seedling, discussed, contested, crystallized, faded, dormant] }
+    ArgumentStance: { type: string, enum: [support, reject] }
+
+    Vote:
+      type: object
+      properties:
+        user_id: { type: string }
+        type: { $ref: '#/components/schemas/VoteType' }
+        weight: { type: integer, description: 'Fibonacci ladder 1·2·3·5·8; base 1 is free' }
+        cast_at: { type: string, format: date-time }
+
+    VoteSummary:
+      type: object
+      properties:
+        support: { type: integer, description: sum of weights }
+        reject: { type: integer }
+        neutral: { type: integer }
+        total: { type: integer }
+        voters: { type: integer, description: distinct users }
+
+    VoteCast:
+      type: object
+      required: [type]
+      properties:
+        type: { $ref: '#/components/schemas/VoteType' }
+        weight: { type: integer, description: 'snapped to the Fibonacci ladder server-side' }
+
+    Meta:
+      type: object
+      properties:
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        author_id: { type: string }
+        location: { type: string, nullable: true }
+
+    ArgumentAttribute:
+      type: object
+      properties:
+        evidence_type: { $ref: '#/components/schemas/EvidenceType' }
+        source_url: { type: string, nullable: true }
+
+    Thesis:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        description: { type: string }
+        description_simple: { type: string, nullable: true, description: author reading register }
+        description_dense: { type: string, nullable: true }
+        categories: { type: array, items: { type: string } }
+        hashtags: { type: array, items: { type: string } }
+        votes: { type: array, items: { $ref: '#/components/schemas/Vote' } }
+        related_thesis_ids: { type: array, items: { type: string } }
+        archived: { type: boolean }
+        lifecycle:
+          type: object
+          properties:
+            state: { $ref: '#/components/schemas/LifecycleState' }
+            state_since: { type: string, format: date-time }
+            quality_score: { type: number }
+        lang: { type: string, nullable: true }
+        meta: { $ref: '#/components/schemas/Meta' }
+
+    ThesisCreate:
+      type: object
+      required: [title, description, categories]
+      properties:
+        title: { type: string, maxLength: 200 }
+        description: { type: string, maxLength: 2000 }
+        categories: { type: array, items: { type: string }, minItems: 1, maxItems: 8 }
+        location: { type: string }
+        description_simple: { type: string, maxLength: 2000 }
+        description_dense: { type: string, maxLength: 2000 }
+
+    ThesisUpdate:
+      type: object
+      properties:
+        title: { type: string, maxLength: 200 }
+        description: { type: string, maxLength: 2000 }
+        categories: { type: array, items: { type: string } }
+
+    Argument:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        thesis_id: { type: string, format: uuid }
+        stance: { $ref: '#/components/schemas/ArgumentStance' }
+        content: { type: string }
+        attributes: { type: array, items: { $ref: '#/components/schemas/ArgumentAttribute' } }
+        votes: { type: array, items: { $ref: '#/components/schemas/Vote' } }
+        forked_from_id: { type: string, format: uuid, nullable: true }
+        categories: { type: array, items: { type: string }, nullable: true }
+        hashtags: { type: array, items: { type: string }, nullable: true }
+        meta: { $ref: '#/components/schemas/Meta' }
+
+    ArgumentCreate:
+      type: object
+      required: [thesis_id, content, stance]
+      properties:
+        thesis_id: { type: string, format: uuid }
+        content: { type: string, maxLength: 800 }
+        stance: { $ref: '#/components/schemas/ArgumentStance' }
+        forked_from_id: { type: string, format: uuid }
+
+    ActivityDay:
+      type: object
+      properties:
+        date: { type: string, description: 'YYYY-MM-DD' }
+        support: { type: integer }
+        reject: { type: integer }
+        neutral: { type: integer }
+        creates: { type: integer }
+        count: { type: integer }
+
+    BudgetBucket:
+      type: object
+      properties:
+        spent: { type: integer }
+        limit: { type: integer }
+        remaining: { type: integer }
+
+    BudgetStatus:
+      type: object
+      properties:
+        date: { type: string }
+        theses: { $ref: '#/components/schemas/BudgetBucket' }
+        support_args: { $ref: '#/components/schemas/BudgetBucket' }
+        reject_args: { $ref: '#/components/schemas/BudgetBucket' }
+        weight_points: { $ref: '#/components/schemas/BudgetBucket' }
+
+    PulseBody:
+      type: object
+      properties:
+        text: { type: string, nullable: true }
+        generated_at: { type: string, format: date-time }
+        stats: { type: object }
+        llm: { type: object }
+
+  securitySchemes:
+    quappeCookie:
+      type: apiKey
+      in: cookie
+      name: quappe_uid
+      description: Anonymous server-minted JWT. Set automatically; do not send a user id in bodies.
+
+security:
+  - quappeCookie: []

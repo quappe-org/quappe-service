@@ -20,6 +20,12 @@ npm run check        # type check
 Env: `QUAPPE_SECRET` (JWT secret — set it in prod), `QUAPPE_DB_PATH`,
 `OLLAMA_URL` / `OLLAMA_MODEL` / `OLLAMA_TIMEOUT`.
 
+## The API contract
+
+The OpenAPI 3.1 spec lives in [`openapi.yaml`](./openapi.yaml) and is served at
+`GET /api/openapi`. It is the contract every client (web, future CLI/app/
+analytics) builds against — keep it in sync when endpoints change.
+
 ## Part of the Quappe platform
 
 - **quappe-service** — this repo: API + DB + logic.
