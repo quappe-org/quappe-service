@@ -22,7 +22,7 @@ The API is the contract. Keep it stable and explicit.
 - `QUAPPE_SEED_COUNT=100000 npm run dev` — override seed size for stress tests.
 - `QUAPPE_DB_PATH=/tmp/foo.db npm run dev` — point at a different SQLite file. Default is `.data/quappe.db`.
 
-Env: `QUAPPE_SECRET` (JWT signing secret — set it in prod so identities survive restarts), plus Ollama defaults `OLLAMA_URL=http://127.0.0.1:11434`, `OLLAMA_MODEL=llama3.1:8b`, `OLLAMA_TIMEOUT=60000`. Without Ollama, report endpoints degrade to a "LLM unavailable" fallback — nothing else depends on it.
+Env: `QUAPPE_SECRET` (JWT signing secret — set it in prod so identities survive restarts), plus Ollama defaults `OLLAMA_URL=http://127.0.0.1:11434`, `OLLAMA_MODEL=qwen2.5:3b`, `OLLAMA_TIMEOUT=60000`. Without Ollama, report endpoints degrade to a "LLM unavailable" fallback — nothing else depends on it.
 
 ## Architecture
 

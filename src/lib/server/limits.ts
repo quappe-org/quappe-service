@@ -4,6 +4,7 @@
 // are in-memory. Daily participation budgets live in src/lib/server/budget.ts.
 
 import { json } from '@sveltejs/kit';
+import { DEFAULT_CATEGORIES } from '$lib/models/types';
 
 export const LIMITS = {
 	thesis_title: 200,
@@ -51,6 +52,7 @@ export function checkCategories(value: unknown): Response | null {
 			{ status: 413 }
 		);
 	}
+	const allowed = new Set(DEFAULT_CATEGORIES.map((c) => c.toLowerCase()));
 	for (const c of value) {
 		if (typeof c !== 'string' || c.trim().length === 0) {
 			return json({ error: 'Each category must be a non-empty string' }, { status: 400 });
@@ -59,6 +61,12 @@ export function checkCategories(value: unknown): Response | null {
 			return json(
 				{ error: `Category name exceeds ${LIMITS.category_name} chars` },
 				{ status: 413 }
+			);
+		}
+		if (!allowed.has(c.trim().toLowerCase())) {
+			return json(
+				{ error: `Unknown category "${c}". Allowed: ${DEFAULT_CATEGORIES.join(', ')}` },
+				{ status: 400 }
 			);
 		}
 	}

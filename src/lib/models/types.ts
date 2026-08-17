@@ -1,6 +1,7 @@
 // Core domain types for Quappe
 
 export type VoteType = 'support' | 'reject' | 'neutral';
+export type ArgumentVoteType = 'support' | 'reject';
 
 // Categories are dynamic strings - managed by admin in settings
 export type Category = string;

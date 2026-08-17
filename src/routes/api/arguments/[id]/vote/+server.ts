@@ -14,18 +14,16 @@ export const POST: RequestHandler = async ({ params, request, getClientAddress, 
 	const rate = checkRate(ip, user_id, 'write_light');
 	if (rate) return rate;
 
-	if (!type || !['support', 'reject', 'neutral'].includes(type)) {
-		return json({ error: 'Invalid vote type. Must be support, reject, or neutral.' }, { status: 400 });
+	if (!type || !['support', 'reject'].includes(type)) {
+		return json({ error: 'Invalid vote type for arguments. Must be support or reject.' }, { status: 400 });
 	}
 
 	const w = normalizeVoteWeight(weight);
 	// Base weight-1 votes are free; extra weight draws from the daily weight pool.
-	if (type === 'support' || type === 'reject') {
-		const maturityErr = checkIdentityMaturityForWeight(cookies, w);
-		if (maturityErr) return maturityErr;
-		const budgetErr = checkWeightBudget(user_id, w);
-		if (budgetErr) return budgetErr;
-	}
+	const maturityErr = checkIdentityMaturityForWeight(cookies, w);
+	if (maturityErr) return maturityErr;
+	const budgetErr = checkWeightBudget(user_id, w);
+	if (budgetErr) return budgetErr;
 	const argument = voteOnArgument(params.id, user_id, type, w);
 
 	if (!argument) {

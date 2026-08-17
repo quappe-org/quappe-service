@@ -10,7 +10,7 @@
 import { logger } from '$lib/stores/logger';
 
 const DEFAULT_URL = 'http://127.0.0.1:11434';
-const DEFAULT_MODEL = 'llama3.1:8b';
+const DEFAULT_MODEL = 'qwen2.5:3b';
 const DEFAULT_TIMEOUT_MS = 60000;
 
 export interface LlmSuccess {
