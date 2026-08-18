@@ -17,7 +17,7 @@ Requirements: Node (with `--experimental-strip-types` support) and npm.
 
 ```bash
 npm install
-npm run dev          # Vite dev server at http://localhost:5173
+npm run dev          # Vite dev server at http://localhost:5273
                      # seeds ~200 demo theses on first authenticated request
 npm run dev:all      # dev + ollama serve (needed for /my and /pulse reports)
 ```
@@ -72,7 +72,7 @@ the same terms as the project: **PolyForm Noncommercial 1.0.0**
 
 ## Known advisories
 
-`npm audit` reports a few issues transitively via `@xenova/transformers`
+`npm audit` reports a few issues transitively via `@huggingface/transformers`
 (the server-side embedding model). These are assessed and accepted for the MVP
-— do not "fix" them with `npm audit fix --force` (it downgrades the model and
-breaks semantic search). See `CLAUDE.md` for the reasoning.
+— do not "fix" them with `npm audit fix --force` (it can downgrade the model and
+break semantic search). See `CLAUDE.md` for the reasoning.
