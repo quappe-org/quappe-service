@@ -150,3 +150,30 @@ export function dbGetThesisIdsVotedByUser(
 		 FROM votes WHERE target_type = 'thesis' AND user_id = ?`
 	).all(user_id) as { thesis_id: string; vote_type: string }[];
 }
+
+// ---- Admin user stats ----
+
+// Total distinct users seen across all votes (proxy for "users", since identity
+// is anonymous — a user only leaves a trace once they vote).
+export function dbCountDistinctVoters(): number {
+	const row = prepare<{ n: number }>(
+		`SELECT COUNT(DISTINCT user_id) AS n FROM votes`
+	).get() as { n: number } | undefined;
+	return row?.n ?? 0;
+}
+
+// Per-day breakdown: distinct users who voted + total votes cast, grouped by
+// the calendar day of cast_at (ISO date prefix). Newest day first.
+export function dbDailyVoterStats(
+	days: number
+): { day: string; voters: number; votes: number }[] {
+	return prepare<{ day: string; voters: number; votes: number }>(
+		`SELECT substr(cast_at, 1, 10) AS day,
+		        COUNT(DISTINCT user_id) AS voters,
+		        COUNT(*) AS votes
+		 FROM votes
+		 GROUP BY day
+		 ORDER BY day DESC
+		 LIMIT ?`
+	).all(days) as { day: string; voters: number; votes: number }[];
+}
