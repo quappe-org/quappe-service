@@ -805,10 +805,10 @@ interface ThesisSeed {
 
 const THESIS_SEEDS: ThesisSeed[] = [
 	// policy
-	{ title: 'Bedingungsloses Grundeinkommen sollte eingeführt werden', description: 'Ein monatliches Grundeinkommen für alle Bürger ohne Bedingungen könnte soziale Sicherheit und Freiheit vereinen.', categories: ['policy', 'economy', 'fairness'] },
-	{ title: 'Wahlrecht ab 16 sollte Standard werden', description: 'Jüngere Menschen sind direkter von Langzeitentscheidungen betroffen und sollten mitbestimmen dürfen.', categories: ['policy', 'fairness'] },
-	{ title: 'Lobbyregister sollten verpflichtend und öffentlich sein', description: 'Transparenz über Einflussnahme stärkt Vertrauen in demokratische Prozesse.', categories: ['policy'] },
-	{ title: 'Volksentscheide auf Bundesebene sollten möglich sein', description: 'Direkte Demokratie kann repräsentative Demokratie ergänzen, nicht ersetzen.', categories: ['policy'] },
+	{ title: 'Bedingungsloses Grundeinkommen sollte eingeführt werden', description: 'Ein monatliches Grundeinkommen für alle Bürger ohne Bedingungen könnte soziale Sicherheit und Freiheit vereinen. #grundeinkommen #sozialstaat', categories: ['policy', 'economy', 'fairness'] },
+	{ title: 'Wahlrecht ab 16 sollte Standard werden', description: 'Jüngere Menschen sind direkter von Langzeitentscheidungen betroffen und sollten mitbestimmen dürfen. #wahlrecht #demokratie', categories: ['policy', 'fairness'] },
+	{ title: 'Lobbyregister sollten verpflichtend und öffentlich sein', description: 'Transparenz über Einflussnahme stärkt Vertrauen in demokratische Prozesse. #transparenz #demokratie', categories: ['policy'] },
+	{ title: 'Volksentscheide auf Bundesebene sollten möglich sein', description: 'Direkte Demokratie kann repräsentative Demokratie ergänzen, nicht ersetzen. #demokratie', categories: ['policy'] },
 	{ title: 'Politiker sollten Vermögensoffenlegung pflichten', description: 'Wer öffentliche Entscheidungen trifft, muss finanzielle Interessenkonflikte offenlegen.', categories: ['policy', 'fairness'] },
 	{ title: 'Abgeordnetenmandate sollten zeitlich begrenzt sein', description: 'Maximal zwei Legislaturperioden würden Erstarrung verhindern und Erneuerung fördern.', categories: ['policy'] },
 	{ title: 'Wahlpflicht würde die Demokratie stärken', description: 'In Ländern wie Australien führt sie zu höherer Wahlbeteiligung und repräsentativeren Ergebnissen.', categories: ['policy'] },
@@ -846,9 +846,9 @@ const THESIS_SEEDS: ThesisSeed[] = [
 	{ title: 'Impfpflicht für Schulkinder ist verhältnismäßig', description: 'Herdenimmunität schützt auch jene, die sich nicht impfen lassen können.', categories: ['health', 'policy'] },
 
 	// environment
-	{ title: 'CO2-Preise müssen deutlich höher sein', description: 'Nur ein wirksamer Preis lenkt Verhalten. Aktuelle Werte spiegeln die wahren Kosten nicht wider.', categories: ['environment', 'economy', 'policy'] },
-	{ title: 'Inlandsflüge unter 500km sollten verboten werden', description: 'Bahnverbindungen sind hier alternative Optionen mit drastisch niedrigerem CO2-Fußabdruck.', categories: ['environment', 'policy'] },
-	{ title: 'Atomenergie ist Teil der Klimalösung', description: 'Trotz Risiken: niedrigste CO2-Bilanz unter den verlässlichen Stromquellen.', categories: ['environment', 'technology', 'policy'] },
+	{ title: 'CO2-Preise müssen deutlich höher sein', description: 'Nur ein wirksamer Preis lenkt Verhalten. Aktuelle Werte spiegeln die wahren Kosten nicht wider. #klimaschutz #co2', categories: ['environment', 'economy', 'policy'] },
+	{ title: 'Inlandsflüge unter 500km sollten verboten werden', description: 'Bahnverbindungen sind hier alternative Optionen mit drastisch niedrigerem CO2-Fußabdruck. #klimaschutz #verkehr', categories: ['environment', 'policy'] },
+	{ title: 'Atomenergie ist Teil der Klimalösung', description: 'Trotz Risiken: niedrigste CO2-Bilanz unter den verlässlichen Stromquellen. #klimaschutz #energie', categories: ['environment', 'technology', 'policy'] },
 	{ title: 'Fleischkonsum sollte stärker besteuert werden', description: 'Externalisierte Kosten (Klima, Wasser, Boden) müssen eingepreist werden.', categories: ['environment', 'health', 'economy'] },
 	{ title: 'Plastikverpackung sollte radikal reduziert werden', description: 'Mikroplastik findet sich überall - in Blut, Muttermilch, Atmosphäre.', categories: ['environment', 'health'] },
 	{ title: 'Tempolimit auf Autobahnen senkt CO2 effektiv', description: '130 km/h würden Millionen Tonnen CO2 sparen - bei minimalem Komfortverlust.', categories: ['environment', 'policy'] },
@@ -1063,7 +1063,7 @@ export function seedData(devUserId?: string): void {
 				title,
 				description,
 				categories: seed.categories,
-				hashtags: [],
+				hashtags: extractHashtagsFrom(title, description),
 				votes: [],
 				related_thesis_ids: [],
 				archived: false,
