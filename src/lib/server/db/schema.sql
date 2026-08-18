@@ -60,3 +60,8 @@ CREATE TABLE IF NOT EXISTS embeddings (
   PRIMARY KEY (target_type, target_id)
 );
 CREATE INDEX IF NOT EXISTS idx_embeddings_target ON embeddings(target_id, target_type);
+
+CREATE TABLE IF NOT EXISTS settings (
+  key   TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
