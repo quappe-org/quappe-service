@@ -1,10 +1,9 @@
 // Server-side budget: the single source of truth for daily participation limits.
 //
-// Vision (.project): participation is a currency. Three separate daily buckets,
-// each a Fibonacci 8, resetting at local (UTC) midnight:
-//   - new theses
-//   - support arguments
-//   - reject arguments
+// Vision (.project): participation is a currency. Daily buckets, each a Fibonacci
+// value, resetting at local (UTC) midnight:
+//   - new theses (8)
+//   - arguments (16 — arguments are directionless; one shared pool)
 // Reading, exploring and base voting (weight 1) are free. Only extra vote
 // WEIGHT costs from a separate weight pool — a strong opinion must be paid for.
 //
@@ -20,19 +19,17 @@ import { identityAgeMs } from '$lib/server/identity';
 // Fibonacci-flavoured daily limits.
 export const BUDGET = {
 	theses_per_day: 8,
-	support_args_per_day: 8,
-	reject_args_per_day: 8,
+	arguments_per_day: 16,
 	// Extra weight points a user may spend per day (base weight-1 votes are free).
 	weight_points_per_day: 21
 } as const;
 
-export type BudgetBucket = 'thesis' | 'support_argument' | 'reject_argument';
+export type BudgetBucket = 'thesis' | 'argument';
 
 export interface BudgetStatus {
 	date: string;
 	theses: { spent: number; limit: number; remaining: number };
-	support_args: { spent: number; limit: number; remaining: number };
-	reject_args: { spent: number; limit: number; remaining: number };
+	arguments: { spent: number; limit: number; remaining: number };
 	weight_points: { spent: number; limit: number; remaining: number };
 }
 
@@ -48,9 +45,7 @@ export function getBudgetStatus(user_id: string): BudgetStatus {
 
 	const theses = getThesesByAuthor(user_id).filter((t) => t.meta.created_at >= sinceIso).length;
 
-	const args = getArgumentsByAuthor(user_id).filter((a) => a.meta.created_at >= sinceIso);
-	const supportArgs = args.filter((a) => a.stance === 'support').length;
-	const rejectArgs = args.filter((a) => a.stance === 'reject').length;
+	const args = getArgumentsByAuthor(user_id).filter((a) => a.meta.created_at >= sinceIso).length;
 
 	// Extra weight points spent today: sum of (weight - 1) over support/reject votes.
 	const votes = getVotesByUserSince(user_id, sinceIso).filter(
@@ -62,8 +57,7 @@ export function getBudgetStatus(user_id: string): BudgetStatus {
 	return {
 		date: dateOnly,
 		theses: mk(theses, BUDGET.theses_per_day),
-		support_args: mk(supportArgs, BUDGET.support_args_per_day),
-		reject_args: mk(rejectArgs, BUDGET.reject_args_per_day),
+		arguments: mk(args, BUDGET.arguments_per_day),
 		weight_points: mk(weightPoints, BUDGET.weight_points_per_day)
 	};
 }
@@ -86,14 +80,11 @@ export function checkThesisBudget(user_id: string): Response | null {
 	return null;
 }
 
-export function checkArgumentBudget(user_id: string, stance: 'support' | 'reject'): Response | null {
+export function checkArgumentBudget(user_id: string): Response | null {
 	const s = getBudgetStatus(user_id);
-	const bucket = stance === 'support' ? s.support_args : s.reject_args;
-	if (bucket.remaining <= 0) {
+	if (s.arguments.remaining <= 0) {
 		return json(
-			{
-				error: `Daily ${stance} argument budget reached. Come back tomorrow — input should have value.`
-			},
+			{ error: 'Daily argument budget reached. Come back tomorrow — input should have value.' },
 			{ status: 429 }
 		);
 	}

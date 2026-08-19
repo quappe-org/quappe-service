@@ -60,7 +60,7 @@ Row 0 anatomy (left → right):
   - `[+ New]` primary button (label collapses to icon on mobile).
   - Complexity slider — icon button `▚`, opens a popover with the slider.
   - Budget — pill `◷N` showing the tightest remaining bucket; opens a popover
-    with all four buckets (theses / support args / reject args / weight pool)
+    with all three buckets (theses / arguments / weight pool)
     + recent activity + link to `/my#budget`.
   - Theme quick-toggle `◐` (invert on/off).
   - Overflow `⋯` — popover menu: Pulse · About · Settings.
@@ -88,10 +88,12 @@ a fork-decision carousel at the top (one vote per fork family).
 ## Thesis detail (/thesis/[id])
 Serif title (canonical) + translate button beside it · description in the
 slider-bound register with a "Reading: simple/dense" indicator when a variant
-is shown · categories · vote row · two argument columns (Supporting | Rejecting).
-Each argument is a fork FAMILY rendered as ONE card: leading variant shown,
-expandable radio-list picker (sorted Top/Latest, capped by slider, "+N more").
-One vote per group.
+is shown · categories · vote row · a SINGLE argument list sorted by approval
+(weighted support), not pro/con columns. Each argument is a fork FAMILY rendered
+as ONE card: leading variant shown, expandable radio-list picker (sorted
+Top/Latest, capped by slider, "+N more"). One vote per group. To vote on an
+argument you must have voted on the thesis first; the emergent pro/contra
+breakdown per argument comes from `/api/theses/[id]/opinion-graph`.
 
 ## About (/about)
 Own left mini-nav (sections) + reading body. No decorative image.
@@ -173,8 +175,8 @@ pulsing unread badge; the rest are subtle hover/popover transitions. So:
 - Voting toggles: same type+weight twice = retract. Weight cycles the Fibonacci
   ladder; base vote is free, extra weight costs from the daily pool.
 - ThesisCard: whole card links to detail; vote buttons stop propagation.
-- Fork keeps the source's stance; forking migrates the author's vote to the new
-  variant; the family shows as one card with a variant picker.
+- Fork migrates the author's vote to the new variant (forks no longer carry a
+  stance); the family shows as one card with a variant picker.
 - Reading register follows the complexity slider (author variants, with
   fallback to the original); a small indicator makes it legible.
 - Editing costs no budget; creating and forking do.

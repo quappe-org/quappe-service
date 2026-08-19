@@ -24,7 +24,6 @@ CREATE INDEX IF NOT EXISTS idx_theses_lang_missing   ON theses(lang) WHERE lang 
 CREATE TABLE IF NOT EXISTS arguments (
   id              TEXT PRIMARY KEY,
   thesis_id       TEXT NOT NULL REFERENCES theses(id) ON DELETE CASCADE,
-  stance          TEXT NOT NULL CHECK (stance IN ('support','reject')),
   content         TEXT NOT NULL,
   attributes_json TEXT NOT NULL DEFAULT '[]',
   categories_json TEXT,

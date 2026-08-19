@@ -70,10 +70,10 @@ export function dbCountArgumentsPerHotThesis(): Map<string, number> {
 export function dbInsertArgument(a: Argument): void {
 	prepare(
 		`INSERT INTO arguments
-		   (id, thesis_id, stance, content, attributes_json, categories_json, hashtags_json, forked_from_id,
+		   (id, thesis_id, content, attributes_json, categories_json, hashtags_json, forked_from_id,
 		    created_at, updated_at, author_id, location)
 		 VALUES
-		   (@id, @thesis_id, @stance, @content, @attributes_json, @categories_json, @hashtags_json, @forked_from_id,
+		   (@id, @thesis_id, @content, @attributes_json, @categories_json, @hashtags_json, @forked_from_id,
 		    @created_at, @updated_at, @author_id, @location)`
 	).run(argumentInsertParams(a));
 }
@@ -143,10 +143,10 @@ export function dbDeleteArgument(id: string): boolean {
 export function dbInsertArgumentsBulk(args: Argument[]): void {
 	const stmt = prepare(
 		`INSERT INTO arguments
-		   (id, thesis_id, stance, content, attributes_json, categories_json, hashtags_json, forked_from_id,
+		   (id, thesis_id, content, attributes_json, categories_json, hashtags_json, forked_from_id,
 		    created_at, updated_at, author_id, location)
 		 VALUES
-		   (@id, @thesis_id, @stance, @content, @attributes_json, @categories_json, @hashtags_json, @forked_from_id,
+		   (@id, @thesis_id, @content, @attributes_json, @categories_json, @hashtags_json, @forked_from_id,
 		    @created_at, @updated_at, @author_id, @location)`
 	);
 	for (const a of args) stmt.run(argumentInsertParams(a));

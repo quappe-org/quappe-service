@@ -629,7 +629,6 @@ export function createArgument(
 	content: string,
 	attributes: Argument['attributes'],
 	author_id: string,
-	stance: Argument['stance'] = 'support',
 	forked_from_id?: string
 ): Argument | { error: string } {
 	if (!dbHasThesis(thesis_id)) {
@@ -640,14 +639,12 @@ export function createArgument(
 		const source = dbGetArgumentById(forked_from_id);
 		if (!source) return { error: 'Source argument not found' };
 		if (source.thesis_id !== thesis_id) return { error: 'Fork source must be from same thesis' };
-		if (source.stance !== stance) return { error: 'Fork must keep same stance' };
 	}
 
 	const created = nowIso();
 	const argument: Argument = {
 		id: generateId(),
 		thesis_id,
-		stance,
 		content,
 		attributes,
 		votes: [],
@@ -661,7 +658,7 @@ export function createArgument(
 	};
 
 	dbInsertArgument(argument);
-	// Auto-upvote: author implicitly supports their own argument
+	// Auto-upvote: author implicitly agrees with their own argument
 	dbUpsertVote('argument', argument.id, author_id, 'support', 1, created);
 
 	// Vote migration: if this is a fork and the author had voted on the original,
@@ -679,7 +676,6 @@ export function createArgument(
 	logger.info('store', forked_from_id ? 'argument forked' : 'argument created', {
 		argument_id: argument.id,
 		thesis_id,
-		stance,
 		forked_from: forked_from_id ?? undefined
 	});
 	// Return with the auto-vote included
@@ -725,7 +721,6 @@ export function voteOnArgument(
 ): Argument | undefined {
 	const argument = dbGetArgumentById(argument_id);
 	if (!argument) return undefined;
-
 	const w = normalizeVoteWeight(weight);
 	const existingVote = dbGetUserVoteOn('argument', argument_id, user_id);
 	if (existingVote && existingVote.type === type && (existingVote.weight ?? 1) === w) {
@@ -781,6 +776,21 @@ function getArgumentGroupIds(argument: Argument): string[] {
 		}
 	}
 	return [...groupIds];
+}
+
+// True if the user has cast a thesis-level vote on the argument's parent thesis.
+// Used to gate argument voting: you must position yourself on the thesis first,
+// so the opinion graph (who — with which stance — agrees with which argument)
+// stays complete.
+export function hasUserVotedOnThesis(thesis_id: string, user_id: string): boolean {
+	return dbGetUserVoteOn('thesis', thesis_id, user_id) !== undefined;
+}
+
+// The user's thesis-level vote type on a given thesis (support/reject/neutral),
+// or null if they haven't voted. Feeds the opinion-graph aggregation.
+export function getUserThesisPosition(thesis_id: string, user_id: string): string | null {
+	const v = dbGetUserVoteOn('thesis', thesis_id, user_id);
+	return v ? v.type : null;
 }
 
 export function deleteArgument(id: string): boolean {
@@ -930,26 +940,27 @@ export function seedData(devUserId?: string): void {
 	const targetCount = Number(process.env.QUAPPE_SEED_COUNT ?? '200');
 	const t0 = Date.now();
 
-	const argTemplates: { support: string[]; reject: string[] } = {
-		support: [
-			'Studien aus mehreren Ländern stützen diese Position.',
-			'Praktische Erfahrungen aus Pilotprojekten sind positiv.',
-			'Es entspricht dem Verhältnismäßigkeitsprinzip.',
-			'Andere Demokratien zeigen, dass es funktioniert.',
-			'Volkswirtschaftliche Analysen sprechen dafür.',
-			'Es schützt schwächere Gruppen ohne starke zu benachteiligen.',
-			'Langfristig spart es Kosten und vermeidet Schäden.'
-		],
-		reject: [
-			'Die Umsetzungskosten wären unverhältnismäßig hoch.',
-			'Es könnte unbeabsichtigte Nebenwirkungen haben.',
-			'Empirische Belege sind dünn und uneindeutig.',
-			'Andere Länder haben es versucht und revidiert.',
-			'Es greift in individuelle Freiheiten ein.',
-			'Bessere Alternativen existieren bereits.',
-			'Der bürokratische Aufwand wäre erheblich.'
-		]
-	};
+	// Directionless argument pool — arguments no longer carry a support/reject
+	// label. A mix of affirming, qualifying and objecting phrasings; the meaning
+	// graph emerges from who (with which thesis stance) upvotes which argument.
+	const argTemplates: string[] = [
+		'Studien aus mehreren Ländern stützen diese Position.',
+		'Praktische Erfahrungen aus Pilotprojekten sind positiv.',
+		'Es entspricht dem Verhältnismäßigkeitsprinzip.',
+		'Andere Demokratien zeigen, dass es funktioniert.',
+		'Volkswirtschaftliche Analysen sprechen dafür.',
+		'Es schützt schwächere Gruppen ohne starke zu benachteiligen.',
+		'Langfristig spart es Kosten und vermeidet Schäden.',
+		'Die Umsetzungskosten wären unverhältnismäßig hoch.',
+		'Es könnte unbeabsichtigte Nebenwirkungen haben.',
+		'Empirische Belege sind dünn und uneindeutig.',
+		'Andere Länder haben es versucht und revidiert.',
+		'Es greift in individuelle Freiheiten ein.',
+		'Bessere Alternativen existieren bereits.',
+		'Der bürokratische Aufwand wäre erheblich.',
+		'Das gilt nur unter bestimmten Bedingungen — sonst nicht.',
+		'Die Wirkung hängt stark von der konkreten Ausgestaltung ab.'
+	];
 
 	const userCount = Math.max(25, Math.min(50000, Math.floor(targetCount / 4)));
 	const users: string[] = [];
@@ -1108,13 +1119,11 @@ export function seedData(devUserId?: string): void {
 
 			const argCount = cfg.argMin + Math.floor(Math.random() * (cfg.argMax - cfg.argMin + 1));
 			for (let ai = 0; ai < argCount; ai++) {
-				const stance: 'support' | 'reject' = Math.random() < cfg.supportBias ? 'support' : 'reject';
 				const argAuthor = pick(users);
 				const arg: Argument = {
 					id: generateId(),
 					thesis_id: thesis.id,
-					stance,
-					content: pick(argTemplates[stance]),
+					content: pick(argTemplates),
 					attributes: [{ evidence_type: pick(['logical', 'study', 'experiential', 'authority'] as const) }],
 					votes: [],
 					meta: {
@@ -1215,14 +1224,12 @@ export function seedData(devUserId?: string): void {
 			}
 
 			for (let ai = 0; ai < cfg.args; ai++) {
-				const stance: 'support' | 'reject' = Math.random() < cfg.supportBias ? 'support' : 'reject';
 				const argAuthor: string = ai % 7 === 0 ? devUserId : pick(users.filter((u) => u !== devUserId));
 				const forkSource = Math.random() < 0.2 && otherArgsPool.length > 0 ? pick(otherArgsPool) : null;
 				const arg: Argument = {
 					id: generateId(),
 					thesis_id: thesis.id,
-					stance,
-					content: pick(argTemplates[stance]),
+					content: pick(argTemplates),
 					attributes: [{ evidence_type: pick(['logical', 'study', 'experiential', 'authority'] as const) }],
 					votes: [],
 					forked_from_id: forkSource?.id,
@@ -1267,12 +1274,10 @@ export function seedData(devUserId?: string): void {
 			for (const t of forkTargets) {
 				const sourceId = pick(myArgIds);
 				const forkAuthor = pick(users.filter((u) => u !== devUserId));
-				const stance: 'support' | 'reject' = Math.random() < 0.55 ? 'support' : 'reject';
 				const arg: Argument = {
 					id: generateId(),
 					thesis_id: t.id,
-					stance,
-					content: pick(argTemplates[stance]),
+					content: pick(argTemplates),
 					attributes: [{ evidence_type: pick(['logical', 'study', 'experiential', 'authority'] as const) }],
 					votes: [],
 					forked_from_id: sourceId,

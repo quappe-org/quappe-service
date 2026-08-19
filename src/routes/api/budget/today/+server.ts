@@ -12,7 +12,6 @@ interface BudgetEvent {
 	vote_type?: string;
 	weight?: number;
 	target?: 'thesis' | 'argument';
-	stance?: 'support' | 'reject';
 }
 
 export const GET: RequestHandler = async ({ locals }) => {
@@ -41,14 +40,13 @@ export const GET: RequestHandler = async ({ locals }) => {
 		events.push({ kind: 'thesis', at: t.meta.created_at, thesis_id: t.id, thesis_title: t.title });
 	}
 
-	// Arguments created today (support/reject buckets).
+	// Arguments created today (single pool).
 	for (const a of getArgumentsByAuthor(user_id).filter((a) => a.meta.created_at >= sinceIso)) {
 		events.push({
 			kind: 'argument',
 			at: a.meta.created_at,
 			thesis_id: a.thesis_id,
-			thesis_title: '',
-			stance: a.stance
+			thesis_title: ''
 		});
 	}
 

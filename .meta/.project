@@ -36,20 +36,30 @@ We search commonalities (can be several) to a specific Thesis.
 - Theses in "hot" states (seedling / discussed / contested / crystallized) are surfaced in listings. Faded / dormant theses stay reachable but are quiet by default.
 
 ## Arguments
-- Arguments support or reject a Thesis (**stance** field, mandatory: `support` | `reject`).
-- Arguments are votable (support | reject | neutral).
+- Arguments are **directionless** — they carry NO author-declared stance. An argument is simply a contribution to a Thesis.
+- Arguments are votable (support | reject | neutral) — an argument vote means "I agree / don't agree with *this argument*".
 - Arguments carry evidence attributes (evidence_type + optional source_url).
-- Arguments per Thesis: Fibonacci-capped, up to 8 per stance (adjustable down to 1 via complexity slider).
-- **No reply chains.** Instead of replying to an argument, users **fork** it: copy the content, adapt it, and submit as a new *variant* in the same stance. Root + variants form one *argument group*.
+- Arguments per Thesis: Fibonacci-capped, up to 8 (adjustable down to 1 via complexity slider). Rendered as ONE list sorted by approval (weighted support), not two pro/con columns.
+- The pro/contra meaning **emerges**: it is not declared but read off *which users upvote which argument*, broken down by each approver's own thesis vote. See "Opinion graph" below.
+- **No reply chains.** Instead of replying to an argument, users **fork** it: copy the content, adapt it, and submit as a new *variant*. Root + variants form one *argument group*.
 - A group renders as ONE card: leading variant shown, expandable into a radio-list picker. One vote per group; picking a variant moves your vote there.
 - Same principle will later apply to Thesis (fork instead of edit-war).
 
 ## Voting
 - Support | Reject | Neutral, for both Theses and Arguments.
 - Each anonymous user votes once. Casting the same vote again retracts it (toggle).
+- **To vote on an argument you must first have voted on its parent Thesis** (server-enforced: a 403 gate). This is what makes the opinion graph legible — every argument approver has a known thesis position.
 - For an argument GROUP (a fork family), a user has ONE vote across all variants — voting a variant moves the vote off its siblings.
 - Reading and base voting (weight 1) are always free. Only extra vote *weight* costs budget.
-- Vote direction is treated neutrally for visibility (support == reject). We do not assume reject = "bad"; a contra-argument can be up-voted for quality. The majority sorts meaning.
+- Vote direction is treated neutrally for visibility (support == reject). We do not assume reject = "bad"; a well-made argument can be up-voted for quality. The majority sorts meaning.
+
+## Opinion graph (emergent stance)
+- Arguments have no declared side. The pro/contra structure is *derived*, not stored.
+- `GET /api/theses/[id]/opinion-graph` returns, per argument, the breakdown of its
+  approvers by their own thesis vote (support / reject / neutral). An argument
+  upvoted mostly by thesis-supporters reads as a "pro" point; one upvoted mostly
+  by thesis-rejecters reads as "contra" — but the platform never forces that
+  label on the author.
 
 ## Weighting
 - A vote's weight walks a Fibonacci ladder: **1 → 2 → 3 → 5 → 8** (then resets). A strong opinion costs disproportionately more, which dampens weight-stacking abuse.
@@ -62,12 +72,11 @@ We search commonalities (can be several) to a specific Thesis.
 ## Input Budget (Fibonacci-flavoured)
 - Participation is a currency, enforced **server-side** (client store is only an optimistic mirror). Reset at UTC midnight:
   - **Thesis**: 8 new theses / day
-  - **Support argument**: 8 / day
-  - **Reject argument**: 8 / day
+  - **Argument**: 16 / day (one pool — arguments are directionless, so there is no support/reject split)
   - **Vote weight pool**: 21 extra weight-points / day (base weight-1 votes are free)
 - Reading, exploring and base voting are free.
 - Editing your own thesis/argument does **not** cost budget.
-- Forking an argument spends the respective stance bucket (it is a new variant).
+- Forking an argument spends the argument bucket (it is a new variant).
 - A freshly-minted identity may cast base votes only for its first minute (Sybil dampener) — no weighted votes until the identity matures.
 - This forces thoughtfulness and naturally limits trolling.
 - Budget is generous - it's a nudge, not a gate.
@@ -109,7 +118,7 @@ We search commonalities (can be several) to a specific Thesis.
 ## Complexity Slider
 - Discrete **Fibonacci** steps (not linear) so choices feel natural and help people focus instead of drowning in a continuum.
   - Theses: 3 · 5 · 8 · 13 · 21 · 34 · 55
-  - Arguments (per stance): 1 · 2 · 3 · 5 · 8
+  - Arguments: 1 · 2 · 3 · 5 · 8
   - Related: 3 · 5 · 8 · 13
 - One slider index drives all three dimensions in lockstep.
 - Simplified language mode available (later).
@@ -158,7 +167,7 @@ It needs a UID, but we want full anonymity (no visible username, only arguments 
 
 ## MVP (Phase 1) - current
 - Single instance, **SQLite** (`.data/quappe.db`, better-sqlite3, WAL), seeded with ~200 example theses.
-- Core: Thesis CRUD (create, edit, archive), Arguments with stance + fork variants, Voting (toggle + Fibonacci weight), Category drill-down, Fibonacci Complexity Slider, server-enforced Input Budget (3 stance buckets + weight pool), Activity Streamgraph, Heat Indicator, About page.
+- Core: Thesis CRUD (create, edit, archive), directionless Arguments with fork variants, Voting (toggle + Fibonacci weight), emergent opinion graph, Category drill-down, Fibonacci Complexity Slider, server-enforced Input Budget (thesis + argument bucket + weight pool), Activity Streamgraph, Heat Indicator, About page.
 - **Lifecycle model**: theses transition through seedling → discussed → contested → crystallized → faded → dormant deterministically; tier is derived from `lifecycle_state`.
 - **Quality score** rewards discourse depth + evidence + engagement over mere agreement; `/top` includes contested theses; a germination boost lets fresh positions surface.
 - **Identity**: anonymous, server-minted **JWT** (HS256) in an httpOnly cookie. `iat`/`exp` claims enable Sybil heuristics (fresh identities can't cast weighted votes for the first minute). Body `user_id`/`author_id` fields are ignored — only the verified token counts.

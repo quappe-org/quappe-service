@@ -15,35 +15,45 @@ Fields:
 - `meta`: Meta
 
 ## Argument
-Supports or rejects a Thesis.
+A directionless contribution to a Thesis. It carries NO stance — the pro/contra
+meaning emerges from *who* upvotes it (see Opinion graph).
 
 Fields:
 - `id`: UUID
 - `thesis_id`: UUID (parent thesis)
-- `stance`: 'support' | 'reject' (mandatory - one column per stance on the UI)
 - `content`: string (the argument text)
 - `attributes`: ArgumentAttribute[] (evidence_type + optional source_url + optional source_comment)
 - `votes`: Vote[]
-- `forked_from_id?`: UUID (points to source argument if this is a fork; must be from same thesis + same stance)
+- `forked_from_id?`: UUID (points to source argument if this is a fork; must be from the same thesis)
 - `meta`: Meta
 
 Notes:
-- No parent-child reply chains. **Fork = create a new argument variant based on an existing one**. Both coexist as one *argument group* (root + variants).
-- An argument group renders as ONE card: the leading variant (most support) is shown; the card expands into a radio-list picker (sorted Top / Latest, capped by the complexity slider, "+N more" hint for the rest). A user has ONE vote per group — voting a variant retracts their vote on siblings (enforced server-side in `voteOnArgument` via the fork-family walk).
+- No parent-child reply chains. **Fork = create a new argument variant based on an existing one**. Both coexist as one *argument group* (root + variants). Forks no longer carry a stance either.
+- Arguments render as ONE list sorted by approval (weighted support), not two pro/con columns. An argument group renders as ONE card: the leading variant (most support) is shown; the card expands into a radio-list picker (sorted Top / Latest, capped by the complexity slider, "+N more" hint for the rest). A user has ONE vote per group — voting a variant retracts their vote on siblings (enforced server-side in `voteOnArgument` via the fork-family walk).
 - Forking migrates the author's vote to the new variant automatically.
-- Arguments per Thesis are limited by the complexity slider (Fibonacci: 1 to 8 per stance).
+- Arguments per Thesis are limited by the complexity slider (Fibonacci: 1 to 8).
 - Arguments inherit their thesis's lifecycle state implicitly.
+
+## Opinion graph (emergent stance)
+Arguments store no side. `GET /api/theses/[id]/opinion-graph` derives structure
+at read time: for each argument it breaks its approvers down by *their own thesis
+vote* (support / reject / neutral). An argument upvoted mostly by thesis-supporters
+reads as "pro"; one upvoted mostly by thesis-rejecters reads as "contra" — the
+label is inferred from the crowd, never declared by the author. This is why
+voting on an argument requires having voted on the parent thesis first (see Vote
+rules): every approver carries a known thesis position.
 
 
 ## Vote
 Fields:
 - `user_id`: anonymous UUID (persisted in browser localStorage)
 - `type`: 'support' | 'reject' | 'neutral'
-- `weight`: integer >= 1 (default 1). Additional weight costs 1 budget point per extra weight (from the matching stance bucket - support or reject). Retracting a weighted vote refunds nothing (design: extra weight is a signal, not a stake).
+- `weight`: integer >= 1 (default 1). Additional weight costs 1 budget point per extra weight (thesis-vote weight from the `thesis` bucket, argument-vote weight from the `argument` bucket). Retracting a weighted vote refunds nothing (design: extra weight is a signal, not a stake).
 - `cast_at`: ISO timestamp
 
 Rules:
 - Each user has one active vote per Thesis or Argument.
+- **Voting on an argument requires an existing vote on its parent Thesis** (server-enforced; otherwise 403). This keeps the opinion graph legible.
 - Casting the same `(type, weight)` again retracts the vote (toggle).
 - Casting the same type with a different weight re-weights the vote in place.
 - Weight is capped at 5 server-side, and 3 in the standard UI.
@@ -136,15 +146,14 @@ On every mutation:
 
 # Input Budget
 
-Three separate daily buckets per user (browser-local, resets at midnight):
-- `thesis`: 7 per day
-- `support`: 7 support arguments per day
-- `reject`: 7 reject arguments per day
+Separate daily buckets per user (browser-local, resets at midnight):
+- `thesis`: 8 per day
+- `argument`: 16 per day (one pool — arguments are directionless, no support/reject split)
 
 Editing your own thesis or argument does not cost budget.
-Forking counts as a new argument in the respective stance bucket.
+Forking counts as a new argument, spending the `argument` bucket.
 Weighted voting: `weight=1` is free, each additional weight point costs 1 from the matching bucket
-(support-vote weight uses `support` bucket, reject-vote weight uses `reject` bucket, neutral uses `support` as default).
+(thesis-vote weight uses the `thesis` bucket, argument-vote weight uses the `argument` bucket).
 
 
 # Categories
@@ -171,7 +180,8 @@ Server-side derivation (`lib/utils/evidence.ts`):
 
 Evidence types: `study | authority | logical | experiential`. There is no
 "emotional" type — emotion is expressed through voting (weight), not a badge.
-The user only chooses stance (support/reject). Everything else is derived.
+The user picks nothing here — arguments are directionless and the evidence type
+is derived. Everything is inferred from the content.
 
 
 # Similarity (future)

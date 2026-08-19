@@ -22,12 +22,10 @@ export const POST: RequestHandler = async ({ request, getClientAddress, locals }
 	const {
 		thesis_id,
 		content,
-		stance,
 		forked_from_id
 	}: {
 		thesis_id: string;
 		content: string;
-		stance: 'support' | 'reject';
 		forked_from_id?: string;
 	} = body;
 
@@ -42,16 +40,12 @@ export const POST: RequestHandler = async ({ request, getClientAddress, locals }
 	const contentErr = checkLength('argument_content', content);
 	if (contentErr) return contentErr;
 
-	if (!stance || !['support', 'reject'].includes(stance)) {
-		return json({ error: 'Missing or invalid stance. Must be "support" or "reject".' }, { status: 400 });
-	}
-
-	// Server-side daily budget enforcement per stance bucket.
-	const budgetErr = checkArgumentBudget(locals.user_id, stance);
+	// Server-side daily budget enforcement (single argument pool).
+	const budgetErr = checkArgumentBudget(locals.user_id);
 	if (budgetErr) return budgetErr;
 
 	const { attributes } = deriveArgumentAttributes(content);
-	const result = createArgument(thesis_id, content, attributes, locals.user_id, stance, forked_from_id);
+	const result = createArgument(thesis_id, content, attributes, locals.user_id, forked_from_id);
 
 	if ('error' in result) {
 		return json({ error: result.error }, { status: 400 });

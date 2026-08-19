@@ -177,3 +177,60 @@ export function dbDailyVoterStats(
 		 LIMIT ?`
 	).all(days) as { day: string; voters: number; votes: number }[];
 }
+
+// ---- Opinion graph ----
+//
+// For every argument on a thesis, break down its "support" voters (users who
+// agree with the argument) by those users' THESIS position. This is the
+// emergent replacement for author-declared stance: an argument that convinces
+// both thesis-supporters and thesis-opponents is a bridge; one that only
+// convinces one camp is partisan — and this is derived, not declared.
+export interface ArgumentApproval {
+	argument_id: string;
+	// counts of argument-supporters grouped by their thesis vote
+	by_thesis_support: number; // approvers who support the thesis
+	by_thesis_reject: number; // approvers who reject the thesis
+	by_thesis_neutral: number; // approvers neutral on the thesis
+	by_thesis_none: number; // approvers with no thesis vote (shouldn't happen post-gate)
+	total_approvers: number;
+}
+
+export function dbArgumentApprovalByThesisStance(thesis_id: string): ArgumentApproval[] {
+	// Join argument-support votes to the same user's thesis vote.
+	const rows = prepare<{ argument_id: string; thesis_vote: string | null; n: number }>(
+		`SELECT av.target_id AS argument_id,
+		        tv.vote_type  AS thesis_vote,
+		        COUNT(*)      AS n
+		 FROM votes av
+		 JOIN arguments a ON a.id = av.target_id AND a.thesis_id = ?
+		 LEFT JOIN votes tv
+		        ON tv.target_type = 'thesis'
+		       AND tv.target_id = ?
+		       AND tv.user_id = av.user_id
+		 WHERE av.target_type = 'argument'
+		   AND av.vote_type = 'support'
+		 GROUP BY av.target_id, tv.vote_type`
+	).all(thesis_id, thesis_id) as { argument_id: string; thesis_vote: string | null; n: number }[];
+
+	const map = new Map<string, ArgumentApproval>();
+	for (const r of rows) {
+		let entry = map.get(r.argument_id);
+		if (!entry) {
+			entry = {
+				argument_id: r.argument_id,
+				by_thesis_support: 0,
+				by_thesis_reject: 0,
+				by_thesis_neutral: 0,
+				by_thesis_none: 0,
+				total_approvers: 0
+			};
+			map.set(r.argument_id, entry);
+		}
+		if (r.thesis_vote === 'support') entry.by_thesis_support += r.n;
+		else if (r.thesis_vote === 'reject') entry.by_thesis_reject += r.n;
+		else if (r.thesis_vote === 'neutral') entry.by_thesis_neutral += r.n;
+		else entry.by_thesis_none += r.n;
+		entry.total_approvers += r.n;
+	}
+	return [...map.values()];
+}

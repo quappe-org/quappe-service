@@ -201,7 +201,7 @@ paths:
               schema: { type: array, items: { $ref: '#/components/schemas/Argument' } }
     post:
       tags: [arguments]
-      summary: Create an argument or fork variant (spends the per-stance budget)
+      summary: Create an argument or fork variant (spends the daily argument budget)
       requestBody:
         required: true
         content:
@@ -357,7 +357,6 @@ components:
     VoteType: { type: string, enum: [support, reject, neutral] }
     EvidenceType: { type: string, enum: [study, authority, logical, experiential] }
     LifecycleState: { type: string, enum: [seedling, discussed, contested, crystallized, faded, dormant] }
-    ArgumentStance: { type: string, enum: [support, reject] }
 
     Vote:
       type: object
@@ -442,7 +441,6 @@ components:
       properties:
         id: { type: string, format: uuid }
         thesis_id: { type: string, format: uuid }
-        stance: { $ref: '#/components/schemas/ArgumentStance' }
         content: { type: string }
         attributes: { type: array, items: { $ref: '#/components/schemas/ArgumentAttribute' } }
         votes: { type: array, items: { $ref: '#/components/schemas/Vote' } }
@@ -453,11 +451,10 @@ components:
 
     ArgumentCreate:
       type: object
-      required: [thesis_id, content, stance]
+      required: [thesis_id, content]
       properties:
         thesis_id: { type: string, format: uuid }
         content: { type: string, maxLength: 800 }
-        stance: { $ref: '#/components/schemas/ArgumentStance' }
         forked_from_id: { type: string, format: uuid }
 
     ActivityDay:

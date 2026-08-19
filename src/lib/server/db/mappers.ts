@@ -25,7 +25,6 @@ export interface ThesisRow {
 export interface ArgumentRow {
 	id: string;
 	thesis_id: string;
-	stance: string;
 	content: string;
 	attributes_json: string;
 	categories_json: string | null;
@@ -88,7 +87,6 @@ export function rowToArgument(row: ArgumentRow, votes: Vote[]): Argument {
 	return {
 		id: row.id,
 		thesis_id: row.thesis_id,
-		stance: row.stance as Argument['stance'],
 		content: row.content,
 		attributes: JSON.parse(row.attributes_json),
 		votes,
@@ -132,7 +130,6 @@ export function argumentInsertParams(a: Argument): ArgumentRow {
 	return {
 		id: a.id,
 		thesis_id: a.thesis_id,
-		stance: a.stance,
 		content: a.content,
 		attributes_json: JSON.stringify(a.attributes),
 		categories_json: a.categories ? JSON.stringify(a.categories) : null,

@@ -30,14 +30,15 @@
 - `DELETE /api/theses/[id]` - hard delete (admin, rarely used - prefer archive).
 - `POST /api/theses/[id]/archive` (body: `{ archived: boolean }`) - archive/unarchive.
 - `POST /api/theses/[id]/vote` (body: `{ user_id, type }`) - toggle vote.
+- `GET  /api/theses/[id]/opinion-graph` - per-argument breakdown of approvers by their thesis vote (support/reject/neutral). The emergent pro/contra structure; arguments store no stance.
 
 ## Arguments
 - `GET  /api/arguments?thesis_id=X` - list arguments for a thesis.
-- `POST /api/arguments` (body: `{ thesis_id, content, attributes, stance, forked_from_id?, author_id? }`) - create.
+- `POST /api/arguments` (body: `{ thesis_id, content, attributes, forked_from_id?, author_id? }`) - create. Arguments are directionless (no `stance`).
 - `GET  /api/arguments/[id]` - single argument.
 - `PUT  /api/arguments/[id]` (body: `{ content?, attributes?, user_id }`) - update (author only).
 - `DELETE /api/arguments/[id]` - hard delete.
-- `POST /api/arguments/[id]/vote` (body: `{ user_id, type }`) - toggle vote.
+- `POST /api/arguments/[id]/vote` (body: `{ user_id, type }`) - toggle vote. Requires the caller to have already voted on the parent thesis (else 403) — this keeps the opinion graph legible.
 
 ## Stats
 - `GET /api/stats` - returns `{ heat: {thesisId: ratio}, arguments: {thesisId: count} }`.

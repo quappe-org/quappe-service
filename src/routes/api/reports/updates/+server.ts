@@ -32,7 +32,6 @@ interface UpdateEvent {
 	fork_votes?: number;
 	// new_argument
 	argument_id?: string;
-	argument_stance?: 'support' | 'reject';
 	argument_content?: string;
 	// lifecycle
 	lifecycle_state?: string;
@@ -100,7 +99,6 @@ function aggregate(user_id: string): UpdatesBody {
 				thesis_id: t.id,
 				thesis_title: t.title,
 				argument_id: a.id,
-				argument_stance: a.stance,
 				argument_content: snip(a.content)
 			});
 		}
