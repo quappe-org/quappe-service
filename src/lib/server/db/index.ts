@@ -48,6 +48,22 @@ function migrate(db: Database.Database): void {
 			if (!/duplicate column/i.test(msg)) throw e;
 		}
 	}
+
+	// v0.3.0: arguments became directionless — drop the old NOT NULL `stance`
+	// column if it still exists, so inserts (which no longer supply stance)
+	// don't hit a constraint failure. SQLite ≥3.35 supports DROP COLUMN.
+	const hasStance = (db.prepare(`PRAGMA table_info(arguments)`).all() as { name: string }[])
+		.some((c) => c.name === 'stance');
+	if (hasStance) {
+		try {
+			db.exec(`ALTER TABLE arguments DROP COLUMN stance`);
+		} catch (e) {
+			// Older SQLite without DROP COLUMN: leave it, but relax the constraint
+			// isn't possible in-place. Log and continue — a fresh DB is preferred.
+			const msg = (e as Error).message ?? '';
+			throw new Error(`Failed to drop legacy arguments.stance column: ${msg}. Reset the DB (delete .data/quappe.db) if this persists.`);
+		}
+	}
 }
 
 export function prepare<T = unknown>(sql: string): Database.Statement<unknown[], T> {
