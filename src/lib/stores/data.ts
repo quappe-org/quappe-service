@@ -1123,14 +1123,22 @@ export function seedData(devUserId?: string): void {
 			}
 
 			const argCount = cfg.argMin + Math.floor(Math.random() * (cfg.argMax - cfg.argMin + 1));
+			// Track this thesis's argument ids so later ones can fork earlier ones,
+			// building real fork families (root + variants) per thesis.
+			const thesisArgIds: string[] = [];
 			for (let ai = 0; ai < argCount; ai++) {
 				const argAuthor = pick(users);
+				// After the first couple of arguments, ~35% chance this one is a
+				// fork (variant) of an existing argument on the same thesis.
+				const canFork = thesisArgIds.length >= 2 && Math.random() < 0.35;
+				const forkOf = canFork ? pick(thesisArgIds) : undefined;
 				const arg: Argument = {
 					id: generateId(),
 					thesis_id: thesis.id,
 					content: pick(argTemplates),
 					attributes: [{ evidence_type: pick(['logical', 'study', 'experiential', 'authority'] as const) }],
 					votes: [],
+					forked_from_id: forkOf,
 					meta: {
 						created_at: pastDate(cfg.activityDaysMax, cfg.activityDaysMin),
 						updated_at: new Date().toISOString(),
@@ -1158,6 +1166,7 @@ export function seedData(devUserId?: string): void {
 					totalArgVotes++;
 				}
 				seededArguments.push(arg);
+				thesisArgIds.push(arg.id);
 				totalArgs++;
 			}
 
@@ -1304,12 +1313,21 @@ export function seedData(devUserId?: string): void {
 	const t1 = Date.now();
 	withTransaction(() => {
 		dbInsertThesesBulk(seededTheses);
-		// Sort so fork sources are inserted before their forks (self-FK on arguments).
-		const sortedArgs = [...seededArguments].sort((a, b) => {
-			if (!a.forked_from_id && b.forked_from_id) return -1;
-			if (a.forked_from_id && !b.forked_from_id) return 1;
-			return 0;
-		});
+		// Topological order so every fork source is inserted before its forks
+		// (self-FK on arguments; fork chains can be multiple levels deep).
+		const argById = new Map(seededArguments.map((a) => [a.id, a]));
+		const sortedArgs: Argument[] = [];
+		const placed = new Set<string>();
+		function place(a: Argument): void {
+			if (placed.has(a.id)) return;
+			if (a.forked_from_id) {
+				const parent = argById.get(a.forked_from_id);
+				if (parent && !placed.has(parent.id)) place(parent);
+			}
+			placed.add(a.id);
+			sortedArgs.push(a);
+		}
+		for (const a of seededArguments) place(a);
 		dbInsertArgumentsBulk(sortedArgs);
 		for (const v of seededVotes) {
 			dbUpsertVote(v.target_type, v.target_id, v.user_id, v.vote_type, v.weight, v.cast_at);
