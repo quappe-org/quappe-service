@@ -15,11 +15,14 @@ import {
 	getThesisById,
 	getAllTheses
 } from '$lib/stores/data';
+import { dbGetReadEventKeys, dbMarkUpdatesRead } from '$lib/server/db/read-updates';
 
 type UpdateKind = 'fork' | 'new_argument' | 'lifecycle';
 
 interface UpdateEvent {
 	kind: UpdateKind;
+	event_key: string; // stable id for read-tracking
+	read: boolean;
 	at: string;
 	thesis_id: string;
 	thesis_title: string;
@@ -46,7 +49,16 @@ interface UpdatesBody {
 		new_arguments: number;
 		lifecycle: number;
 		total: number;
+		unread: number;
 	};
+}
+
+// Deterministic key for an event so read-state survives re-aggregation.
+// Must be reproducible from the event's identifying fields alone.
+function eventKey(e: { kind: UpdateKind; thesis_id: string; at: string; fork_argument_id?: string; argument_id?: string; lifecycle_state?: string }): string {
+	if (e.kind === 'fork') return `fork:${e.fork_argument_id}`;
+	if (e.kind === 'new_argument') return `arg:${e.argument_id}`;
+	return `life:${e.thesis_id}:${e.lifecycle_state}:${e.at}`;
 }
 
 function snip(s: string, n = 140): string {
@@ -75,6 +87,8 @@ function aggregate(user_id: string): UpdatesBody {
 			const forkVotes = fork.votes.reduce((s, v) => s + (v.type === 'support' ? v.weight : 0), 0);
 			events.push({
 				kind: 'fork',
+				event_key: '',
+				read: false,
 				at: fork.meta.created_at,
 				thesis_id: fork.thesis_id,
 				thesis_title: parent?.title ?? '(unknown)',
@@ -95,6 +109,8 @@ function aggregate(user_id: string): UpdatesBody {
 			if (!withinWindow(a.meta.created_at)) continue;
 			events.push({
 				kind: 'new_argument',
+				event_key: '',
+				read: false,
 				at: a.meta.created_at,
 				thesis_id: t.id,
 				thesis_title: t.title,
@@ -115,6 +131,8 @@ function aggregate(user_id: string): UpdatesBody {
 		if (!withinWindow(stateSince)) continue;
 		events.push({
 			kind: 'lifecycle',
+			event_key: '',
+			read: false,
 			at: stateSince,
 			thesis_id: t.id,
 			thesis_title: t.title,
@@ -123,6 +141,15 @@ function aggregate(user_id: string): UpdatesBody {
 	}
 
 	events.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
+
+	// Stamp keys + read state from the persisted markers.
+	const readKeys = dbGetReadEventKeys(user_id);
+	let unread = 0;
+	for (const e of events) {
+		e.event_key = eventKey(e);
+		e.read = readKeys.has(e.event_key);
+		if (!e.read) unread++;
+	}
 
 	let forks = 0,
 		new_arguments = 0,
@@ -141,11 +168,22 @@ function aggregate(user_id: string): UpdatesBody {
 			forks,
 			new_arguments,
 			lifecycle,
-			total: events.length
+			total: events.length,
+			unread
 		}
 	};
 }
 
 export const GET: RequestHandler = async ({ locals }) => {
 	return json(aggregate(locals.user_id));
+};
+
+// Mark update events as read. Body: { event_keys: string[] }.
+export const PUT: RequestHandler = async ({ request, locals }) => {
+	const body = await request.json().catch(() => ({}));
+	const keys = Array.isArray(body?.event_keys) ? body.event_keys.filter((k: unknown) => typeof k === 'string') : [];
+	if (keys.length > 0) {
+		dbMarkUpdatesRead(locals.user_id, keys, new Date().toISOString());
+	}
+	return json({ ok: true, marked: keys.length });
 };

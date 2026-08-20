@@ -64,3 +64,13 @@ CREATE TABLE IF NOT EXISTS settings (
   key   TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
+
+-- Per-user "this update event was read" markers. event_key is a deterministic
+-- hash of the event (kind + ids + timestamp) computed by the updates endpoint.
+CREATE TABLE IF NOT EXISTS read_updates (
+  user_id   TEXT NOT NULL,
+  event_key TEXT NOT NULL,
+  read_at   TEXT NOT NULL,
+  PRIMARY KEY (user_id, event_key)
+);
+CREATE INDEX IF NOT EXISTS idx_read_updates_user ON read_updates(user_id);
