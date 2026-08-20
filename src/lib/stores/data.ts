@@ -938,6 +938,11 @@ export function seedData(devUserId?: string): void {
 	if (stats.total > 0) return;
 
 	const targetCount = Number(process.env.QUAPPE_SEED_COUNT ?? '200');
+	// QUAPPE_SEED_COUNT=0 → start with a completely empty system (no demo data).
+	if (!Number.isFinite(targetCount) || targetCount <= 0) {
+		logger.info('seed', 'seeding skipped (QUAPPE_SEED_COUNT<=0) — empty system');
+		return;
+	}
 	const t0 = Date.now();
 
 	// Directionless argument pool — arguments no longer carry a support/reject
@@ -1010,17 +1015,17 @@ export function seedData(devUserId?: string): void {
 						activityDaysMax: 20,
 						voteMin: 0,
 						voteMax: 15,
-						argMin: 0,
-						argMax: 4,
+						argMin: 2,
+						argMax: 12,
 						supportBias: 0.55
 					}
 				]
 			: [
-					{ fraction: 0.05, ageDaysMin: 0, ageDaysMax: 7, activityDaysMin: 0, activityDaysMax: 2, voteMin: 0, voteMax: 3, argMin: 0, argMax: 1, supportBias: 0.55 },
-					{ fraction: 0.15, ageDaysMin: 7, ageDaysMax: 30, activityDaysMin: 0, activityDaysMax: 5, voteMin: 5, voteMax: 25, argMin: 1, argMax: 5, supportBias: 0.55 },
-					{ fraction: 0.15, ageDaysMin: 30, ageDaysMax: 90, activityDaysMin: 0, activityDaysMax: 10, voteMin: 20, voteMax: 60, argMin: 3, argMax: 8, supportBias: 0.75 },
-					{ fraction: 0.45, ageDaysMin: 30, ageDaysMax: 120, activityDaysMin: 30, activityDaysMax: 85, voteMin: 0, voteMax: 10, argMin: 0, argMax: 2, supportBias: 0.5 },
-					{ fraction: 0.2, ageDaysMin: 90, ageDaysMax: 365, activityDaysMin: 91, activityDaysMax: 360, voteMin: 0, voteMax: 5, argMin: 0, argMax: 1, supportBias: 0.5 }
+					{ fraction: 0.05, ageDaysMin: 0, ageDaysMax: 7, activityDaysMin: 0, activityDaysMax: 2, voteMin: 0, voteMax: 3, argMin: 1, argMax: 4, supportBias: 0.55 },
+					{ fraction: 0.15, ageDaysMin: 7, ageDaysMax: 30, activityDaysMin: 0, activityDaysMax: 5, voteMin: 5, voteMax: 25, argMin: 4, argMax: 14, supportBias: 0.55 },
+					{ fraction: 0.15, ageDaysMin: 30, ageDaysMax: 90, activityDaysMin: 0, activityDaysMax: 10, voteMin: 20, voteMax: 60, argMin: 8, argMax: 25, supportBias: 0.75 },
+					{ fraction: 0.45, ageDaysMin: 30, ageDaysMax: 120, activityDaysMin: 30, activityDaysMax: 85, voteMin: 0, voteMax: 10, argMin: 2, argMax: 8, supportBias: 0.5 },
+					{ fraction: 0.2, ageDaysMin: 90, ageDaysMax: 365, activityDaysMin: 91, activityDaysMax: 360, voteMin: 1, voteMax: 5, argMin: 1, argMax: 5, supportBias: 0.5 }
 				];
 
 	const variationPrefixes = ['', 'Vorschlag: ', 'Debatte: ', 'These: ', 'Zur Diskussion: ', 'Frage: ', 'Position: '];
@@ -1132,12 +1137,12 @@ export function seedData(devUserId?: string): void {
 						author_id: argAuthor
 					}
 				};
-				const argVoteCount = Math.floor(Math.random() * 8);
+				const argVoteCount = 3 + Math.floor(Math.random() * 15);
 				const argVoters = pickN(users, Math.min(argVoteCount, users.length));
 				for (const v of argVoters) {
 					const vote: Vote = {
 						user_id: v,
-						type: pick(['support', 'reject', 'neutral'] as const),
+						type: pick(['support', 'reject'] as const),
 						weight: 1,
 						cast_at: pastDate(cfg.activityDaysMax, cfg.activityDaysMin)
 					};
@@ -1239,12 +1244,12 @@ export function seedData(devUserId?: string): void {
 						author_id: argAuthor
 					}
 				};
-				const argVoteCount = Math.floor(Math.random() * 8);
+				const argVoteCount = 3 + Math.floor(Math.random() * 15);
 				const argVoters = pickN(users, Math.min(argVoteCount, users.length));
 				for (const v of argVoters) {
 					const vote: Vote = {
 						user_id: v,
-						type: pick(['support', 'reject', 'neutral'] as const),
+						type: pick(['support', 'reject'] as const),
 						weight: 1,
 						cast_at: pastDate(Math.min(cfg.ageDays, 10))
 					};

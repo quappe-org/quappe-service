@@ -22,19 +22,27 @@ export const GET: RequestHandler = async ({ url }) => {
 	const trending = url.searchParams.get('trending');
 	const top = url.searchParams.get('top');
 	const limitParam = url.searchParams.get('limit');
+	const offsetParam = url.searchParams.get('offset');
 	const limit = limitParam ? parseInt(limitParam, 10) : 10;
+	const offset = offsetParam ? Math.max(0, parseInt(offsetParam, 10)) : 0;
+
+	// A big internal cap so we can rank the full set, then window it. Ranking
+	// functions take a limit; ask for offset+limit and slice the tail off.
+	const window = offset + limit;
 
 	if (trending === 'true') {
-		return json(getTrendingTheses(limit));
+		const ranked = getTrendingTheses(window);
+		return json(ranked.slice(offset));
 	}
 
 	if (top === 'true') {
-		return json(getTopTheses(limit));
+		const ranked = getTopTheses(window);
+		return json(ranked.slice(offset));
 	}
 
 	let theses = getAllTheses();
-	if (limitParam) {
-		theses = theses.slice(0, limit);
+	if (limitParam || offsetParam) {
+		theses = theses.slice(offset, offset + limit);
 	}
 
 	return json(theses);
