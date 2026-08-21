@@ -17,6 +17,10 @@ import {
 	dbGetThesesMissingLang,
 	dbGetThesesMissingHashtags,
 	dbGetThesisById,
+	dbGetThesisByExternalRef,
+	dbGetThesesByRefPrefix,
+	dbUpdateImportedThesis,
+	dbDeleteThesesByRefPrefix,
 	dbHasThesis,
 	dbInsertThesesBulk,
 	dbInsertThesis,
@@ -224,6 +228,70 @@ export function createThesis(
 	});
 	// Return with the auto-vote included
 	return dbGetThesisById(thesis.id) ?? thesis;
+}
+
+// ---- Import (issue-tracker bridge) ----
+//
+// Upsert a thesis by its external_ref. If a thesis with this ref exists we
+// update its mutable fields (idempotent re-sync); otherwise we create it under
+// a system author. Never applies budget/rate limits — the caller is trusted
+// (guarded by the import secret at the route layer).
+export interface ImportThesisInput {
+	external_ref: string;
+	title: string;
+	description: string;
+	categories: string[];
+	hashtags?: string[];
+	archived?: boolean;
+	author_id: string; // system/bridge author id
+}
+
+export function importThesis(input: ImportThesisInput): { thesis: Thesis; created: boolean } {
+	const existing = dbGetThesisByExternalRef(input.external_ref);
+	const now = nowIso();
+	const hashtags = input.hashtags ?? extractHashtagsFrom(input.title, input.description);
+
+	if (existing) {
+		dbUpdateImportedThesis(existing.id, {
+			title: input.title,
+			description: input.description,
+			categories: input.categories,
+			hashtags,
+			archived: input.archived ?? false,
+			updated_at: now
+		});
+		bumpVersion();
+		return { thesis: dbGetThesisById(existing.id) ?? existing, created: false };
+	}
+
+	const thesis: Thesis = {
+		id: generateId(),
+		title: input.title,
+		description: input.description,
+		categories: input.categories,
+		hashtags,
+		votes: [],
+		related_thesis_ids: [],
+		archived: input.archived ?? false,
+		lifecycle: { state: 'seedling', state_since: now, quality_score: 0 },
+		external_ref: input.external_ref,
+		meta: { created_at: now, updated_at: now, author_id: input.author_id }
+	};
+	dbInsertThesis(thesis);
+	bumpVersion();
+	logger.info('store', 'thesis imported', { external_ref: input.external_ref, thesis_id: thesis.id });
+	return { thesis: dbGetThesisById(thesis.id) ?? thesis, created: true };
+}
+
+export function listImportedTheses(sourcePrefix: string): Thesis[] {
+	return dbGetThesesByRefPrefix(sourcePrefix);
+}
+
+export function purgeImportedTheses(sourcePrefix: string): string[] {
+	const ids = dbDeleteThesesByRefPrefix(sourcePrefix);
+	if (ids.length > 0) bumpVersion();
+	logger.info('store', 'imported theses purged', { source: sourcePrefix, count: ids.length });
+	return ids;
 }
 
 export function updateThesis(

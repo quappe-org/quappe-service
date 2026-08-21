@@ -101,6 +101,10 @@ export interface Thesis {
 	archived: boolean; // archived by admin (still visible, but de-emphasized)
 	lifecycle: LifecycleInfo;
 	lang?: string; // 2-letter ISO code (en|de|fr|es); undefined until LLM detects
+	// External source reference for imported theses (e.g. an issue-tracker bridge).
+	// Format is "provider:identifier", e.g. "github:owner/repo#123". Enables
+	// idempotent upsert + selective purge without touching user-authored theses.
+	external_ref?: string;
 	meta: Meta;
 }
 

@@ -70,12 +70,12 @@ export function dbInsertThesis(t: Thesis): void {
 		   (id, title, description, description_simple, description_dense,
 		    categories_json, hashtags_json, related_ids_json, archived,
 		    lifecycle_state, lifecycle_since, lifecycle_quality, lang,
-		    created_at, updated_at, author_id, location)
+		    created_at, updated_at, author_id, location, external_ref)
 		 VALUES
 		   (@id, @title, @description, @description_simple, @description_dense,
 		    @categories_json, @hashtags_json, @related_ids_json, @archived,
 		    @lifecycle_state, @lifecycle_since, @lifecycle_quality, @lang,
-		    @created_at, @updated_at, @author_id, @location)`
+		    @created_at, @updated_at, @author_id, @location, @external_ref)`
 	).run(p);
 }
 
@@ -164,12 +164,12 @@ export function dbInsertThesesBulk(theses: Thesis[]): void {
 		   (id, title, description, description_simple, description_dense,
 		    categories_json, hashtags_json, related_ids_json, archived,
 		    lifecycle_state, lifecycle_since, lifecycle_quality, lang,
-		    created_at, updated_at, author_id, location)
+		    created_at, updated_at, author_id, location, external_ref)
 		 VALUES
 		   (@id, @title, @description, @description_simple, @description_dense,
 		    @categories_json, @hashtags_json, @related_ids_json, @archived,
 		    @lifecycle_state, @lifecycle_since, @lifecycle_quality, @lang,
-		    @created_at, @updated_at, @author_id, @location)`
+		    @created_at, @updated_at, @author_id, @location, @external_ref)`
 	);
 	for (const t of theses) stmt.run(thesisInsertParams(t));
 }
@@ -190,4 +190,58 @@ export function dbGetThesesMissingHashtags(): Thesis[] {
 		`SELECT * FROM theses WHERE hashtags_json IS NULL OR hashtags_json = '[]'`
 	).all() as ThesisRow[];
 	return assembleTheses(rows);
+}
+
+// ---- External-ref (imported theses) ----
+
+export function dbGetThesisByExternalRef(ref: string): Thesis | undefined {
+	const row = prepare<ThesisRow>(`SELECT * FROM theses WHERE external_ref = ?`).get(ref) as
+		| ThesisRow
+		| undefined;
+	if (!row) return undefined;
+	const votes = dbGetVotesForTarget('thesis', row.id);
+	return rowToThesis(row, votes);
+}
+
+// List theses whose external_ref starts with a given source prefix
+// (e.g. "github:owner/repo" matches all issues of that repo).
+export function dbGetThesesByRefPrefix(prefix: string): Thesis[] {
+	const rows = prepare<ThesisRow>(
+		`SELECT * FROM theses WHERE external_ref LIKE ? ORDER BY created_at DESC`
+	).all(prefix + '%') as ThesisRow[];
+	return assembleTheses(rows);
+}
+
+// Update the mutable fields of an already-imported thesis (idempotent re-sync).
+export function dbUpdateImportedThesis(
+	id: string,
+	fields: { title: string; description: string; categories: string[]; hashtags: string[]; archived: boolean; updated_at: string }
+): void {
+	prepare(
+		`UPDATE theses SET title = ?, description = ?, categories_json = ?,
+		    hashtags_json = ?, archived = ?, updated_at = ?
+		 WHERE id = ?`
+	).run(
+		fields.title,
+		fields.description,
+		JSON.stringify(fields.categories),
+		JSON.stringify(fields.hashtags),
+		fields.archived ? 1 : 0,
+		fields.updated_at,
+		id
+	);
+}
+
+// Delete every thesis under a source prefix (selective purge). Votes and
+// arguments cascade via FK / manual cleanup in the facade. Returns count.
+export function dbDeleteThesesByRefPrefix(prefix: string): string[] {
+	const rows = prepare<{ id: string }>(
+		`SELECT id FROM theses WHERE external_ref LIKE ?`
+	).all(prefix + '%') as { id: string }[];
+	const ids = rows.map((r) => r.id);
+	for (const id of ids) {
+		dbDeleteVotesForTarget('thesis', id);
+		prepare(`DELETE FROM theses WHERE id = ?`).run(id);
+	}
+	return ids;
 }

@@ -38,7 +38,8 @@ function migrate(db: Database.Database): void {
 		`ALTER TABLE theses    ADD COLUMN hashtags_json TEXT NOT NULL DEFAULT '[]'`,
 		`ALTER TABLE arguments ADD COLUMN hashtags_json TEXT`,
 		`ALTER TABLE theses    ADD COLUMN description_simple TEXT`,
-		`ALTER TABLE theses    ADD COLUMN description_dense TEXT`
+		`ALTER TABLE theses    ADD COLUMN description_dense TEXT`,
+		`ALTER TABLE theses    ADD COLUMN external_ref TEXT`
 	];
 	for (const sql of alters) {
 		try {
@@ -47,6 +48,12 @@ function migrate(db: Database.Database): void {
 			const msg = (e as Error).message ?? '';
 			if (!/duplicate column/i.test(msg)) throw e;
 		}
+	}
+	// UNIQUE index for external_ref (only meaningful once the column exists).
+	try {
+		db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_theses_external_ref ON theses(external_ref) WHERE external_ref IS NOT NULL`);
+	} catch {
+		// index may already exist from schema.sql on fresh DBs
 	}
 
 	// v0.3.0: arguments became directionless — drop the old NOT NULL `stance`

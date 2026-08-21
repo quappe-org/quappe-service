@@ -20,6 +20,7 @@ export interface ThesisRow {
 	updated_at: string;
 	author_id: string;
 	location: string | null;
+	external_ref: string | null;
 }
 
 export interface ArgumentRow {
@@ -74,6 +75,7 @@ export function rowToThesis(row: ThesisRow, votes: Vote[]): Thesis {
 			quality_score: row.lifecycle_quality
 		},
 		lang: row.lang ?? undefined,
+		external_ref: row.external_ref ?? undefined,
 		meta: {
 			created_at: row.created_at,
 			updated_at: row.updated_at,
@@ -122,7 +124,8 @@ export function thesisInsertParams(t: Thesis): ThesisRow {
 		created_at: t.meta.created_at,
 		updated_at: t.meta.updated_at,
 		author_id: t.meta.author_id,
-		location: t.meta.location ?? null
+		location: t.meta.location ?? null,
+		external_ref: t.external_ref ?? null
 	};
 }
 

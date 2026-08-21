@@ -15,11 +15,13 @@ CREATE TABLE IF NOT EXISTS theses (
   created_at          TEXT NOT NULL,
   updated_at          TEXT NOT NULL,
   author_id           TEXT NOT NULL,
-  location            TEXT
+  location            TEXT,
+  external_ref        TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_theses_lifecycle_state ON theses(lifecycle_state);
 CREATE INDEX IF NOT EXISTS idx_theses_author         ON theses(author_id);
 CREATE INDEX IF NOT EXISTS idx_theses_lang_missing   ON theses(lang) WHERE lang IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_theses_external_ref ON theses(external_ref) WHERE external_ref IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS arguments (
   id              TEXT PRIMARY KEY,
