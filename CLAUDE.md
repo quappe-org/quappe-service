@@ -82,6 +82,7 @@ Semantic search uses `@huggingface/transformers` (maintained successor to the ar
 
 - **quappe-service** — this repo: API + DB + logic.
 - **quappe-web** — the browser UI (proxies `/api/*` here).
+- **quappe-github-bridge** — syncs GitHub issues into theses via `/api/import/theses`.
 - **quappe-ops** — operational setup (k8s, prometheus, logs). Later, when load demands it.
 - **quappe-insight** — data visualisation / meta reporting. Later.
 - **quappe-docs** — the idea, rules, design decisions. Later.
