@@ -1,6 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { prepare } from '$lib/server/db/index';
+import { requireAdmin } from '$lib/server/admin-auth';
 
 const BANNER_KEY = 'banner_text';
 
@@ -9,6 +10,7 @@ const BANNER_KEY = 'banner_text';
 const DEFAULT_BANNER =
 	'This is an early prototype — feel free to play. All data will be reset before launch. Feedback welcome as a GitHub issue: github.com/quappe-org/quappe-service/issues';
 
+// GET stays public — every client reads the banner to display it.
 export const GET: RequestHandler = async () => {
 	const row = prepare<{ value: string }>('SELECT value FROM settings WHERE key = ?').get(BANNER_KEY) as { value: string } | undefined;
 	// No row at all → never configured → show the default prototype notice.
@@ -16,7 +18,11 @@ export const GET: RequestHandler = async () => {
 	return json({ text });
 };
 
+// PUT requires admin — setting/clearing the site-wide banner is an operator action.
 export const PUT: RequestHandler = async ({ request }) => {
+	const denied = requireAdmin(request);
+	if (denied) return denied;
+
 	const { text } = await request.json();
 	const value = typeof text === 'string' ? text.trim() : '';
 

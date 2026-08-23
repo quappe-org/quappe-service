@@ -2,14 +2,18 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { tailLogs, logStats, clearLogs, type LogLevel } from '$lib/stores/logger';
 import { tierStats } from '$lib/stores/data';
+import { requireAdmin } from '$lib/server/admin-auth';
 
 /**
  * GET  /api/admin/logs?since=<seq>&limit=<n>&level=<lvl>&source=<src>
  * Returns log entries newer than `since` (default 0 = all buffered).
  *
- * DELETE clears the buffer.
+ * DELETE clears the buffer. Both require admin.
  */
-export const GET: RequestHandler = async ({ url }) => {
+export const GET: RequestHandler = async ({ url, request }) => {
+	const denied = requireAdmin(request);
+	if (denied) return denied;
+
 	const since = Number(url.searchParams.get('since') ?? '0');
 	const limit = Math.min(2000, Number(url.searchParams.get('limit') ?? '500'));
 	const level = url.searchParams.get('level') as LogLevel | null;
@@ -26,7 +30,9 @@ export const GET: RequestHandler = async ({ url }) => {
 	});
 };
 
-export const DELETE: RequestHandler = async () => {
+export const DELETE: RequestHandler = async ({ request }) => {
+	const denied = requireAdmin(request);
+	if (denied) return denied;
 	clearLogs();
 	return json({ ok: true });
 };

@@ -1,8 +1,12 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { archiveThesis } from '$lib/stores/data';
+import { requireAdmin } from '$lib/server/admin-auth';
 
 export const POST: RequestHandler = async ({ params, request }) => {
+	const denied = requireAdmin(request);
+	if (denied) return denied;
+
 	const body = await request.json().catch(() => ({}));
 	const archived = body.archived !== false; // default: archive
 	const updated = archiveThesis(params.id, archived);
