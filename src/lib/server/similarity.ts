@@ -67,7 +67,8 @@ export function findSimilarTheses(
 	queryEmbedding: Float32Array,
 	candidates: { thesis: Thesis; embedding: Float32Array }[],
 	topN = 5,
-	excludeId?: string
+	excludeId?: string,
+	minScore = 0.6
 ): ScoredThesis[] {
 	const scored: ScoredThesis[] = [];
 	for (const { thesis, embedding } of candidates) {
@@ -75,7 +76,7 @@ export function findSimilarTheses(
 		scored.push({ thesis, score: cosineSimilarity(queryEmbedding, embedding) });
 	}
 	scored.sort((a, b) => b.score - a.score);
-	return scored.slice(0, topN).filter((s) => s.score > 0.6);
+	return scored.slice(0, topN).filter((s) => s.score > minScore);
 }
 
 // ---- Similar arguments ----
