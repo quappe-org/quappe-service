@@ -92,6 +92,19 @@ export function isDbEmpty(): boolean {
 	return !row || row.n === 0;
 }
 
+// Wipe all domain data (keep the schema). Used by the admin reset endpoint on
+// business instances that reset per iteration. `settings` is preserved so the
+// site banner / config survive a reset; pass keepSettings=false to nuke those too.
+export function dbWipeAll(keepSettings = true): void {
+	const db = getDb();
+	db.exec('DELETE FROM votes');
+	db.exec('DELETE FROM arguments');
+	db.exec('DELETE FROM embeddings');
+	db.exec('DELETE FROM read_updates');
+	db.exec('DELETE FROM theses');
+	if (!keepSettings) db.exec('DELETE FROM settings');
+}
+
 export function closeDb(): void {
 	if (_db) {
 		_db.close();

@@ -10,8 +10,8 @@ import { requireAdmin } from '$lib/server/admin-auth';
  *
  * DELETE clears the buffer. Both require admin.
  */
-export const GET: RequestHandler = async ({ url, request }) => {
-	const denied = requireAdmin(request);
+export const GET: RequestHandler = async ({ url, request, cookies }) => {
+	const denied = requireAdmin(request, cookies);
 	if (denied) return denied;
 
 	const since = Number(url.searchParams.get('since') ?? '0');
@@ -30,8 +30,8 @@ export const GET: RequestHandler = async ({ url, request }) => {
 	});
 };
 
-export const DELETE: RequestHandler = async ({ request }) => {
-	const denied = requireAdmin(request);
+export const DELETE: RequestHandler = async ({ request, cookies }) => {
+	const denied = requireAdmin(request, cookies);
 	if (denied) return denied;
 	clearLogs();
 	return json({ ok: true });

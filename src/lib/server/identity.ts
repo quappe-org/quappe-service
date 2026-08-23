@@ -53,11 +53,14 @@ function b64urlJson(obj: unknown): string {
 }
 
 // ---- JWT payload ----
+export type Role = 'member' | 'admin';
+
 interface JwtClaims {
 	sub: string; // the UUID (user_id)
 	iat: number; // issued-at (unix seconds)
 	exp: number; // expiry (unix seconds)
 	iss: string; // issuer
+	role?: Role; // optional: elevated identity (gated/business instances)
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -76,7 +79,7 @@ function hmac(input: string): string {
 }
 
 /** Mint a JWT for a given UUID. */
-export function encode(uuid: string): string {
+export function encode(uuid: string, role?: Role): string {
 	const now = Math.floor(Date.now() / 1000);
 	const claims: JwtClaims = {
 		sub: uuid,
@@ -84,6 +87,7 @@ export function encode(uuid: string): string {
 		exp: now + TOKEN_TTL_SEC,
 		iss: ISSUER
 	};
+	if (role) claims.role = role;
 	const payloadSeg = b64urlJson(claims);
 	const sig = hmac(signingInput(payloadSeg));
 	return `${HEADER}.${payloadSeg}.${sig}`;
@@ -116,6 +120,7 @@ export function decodeClaims(token: string): JwtClaims | null {
 	if (!claims || typeof claims.sub !== 'string' || !isUuid(claims.sub)) return null;
 	if (claims.iss !== ISSUER) return null;
 	if (typeof claims.exp !== 'number' || claims.exp < Math.floor(Date.now() / 1000)) return null;
+	if (claims.role !== undefined && claims.role !== 'member' && claims.role !== 'admin') return null;
 
 	return claims;
 }
@@ -142,6 +147,11 @@ export function readClaims(cookies: Cookies): JwtClaims | null {
 	return decodeClaims(raw);
 }
 
+/** The verified role from the cookie, or null if none / anonymous. */
+export function readRole(cookies: Cookies): Role | null {
+	return readClaims(cookies)?.role ?? null;
+}
+
 /**
  * How old is this identity, in ms? Returns Infinity if no valid token
  * (treat unknown as "old" so we never over-penalise). Used for Sybil
@@ -154,8 +164,8 @@ export function identityAgeMs(cookies: Cookies): number {
 }
 
 /** Set (or refresh) the identity cookie. httpOnly + sameSite=lax. */
-export function setUserIdCookie(cookies: Cookies, user_id: string): void {
-	cookies.set(COOKIE_NAME, encode(user_id), {
+export function setUserIdCookie(cookies: Cookies, user_id: string, role?: Role): void {
+	cookies.set(COOKIE_NAME, encode(user_id, role), {
 		path: '/',
 		httpOnly: true,
 		sameSite: 'lax',
@@ -165,10 +175,18 @@ export function setUserIdCookie(cookies: Cookies, user_id: string): void {
 }
 
 /** Mint a fresh UUID and immediately set the cookie. */
-export function mintAndSet(cookies: Cookies): string {
+export function mintAndSet(cookies: Cookies, role?: Role): string {
 	const uuid = crypto.randomUUID();
-	setUserIdCookie(cookies, uuid);
+	setUserIdCookie(cookies, uuid, role);
 	return uuid;
+}
+
+/** Re-issue the current identity's cookie with an elevated (or cleared) role,
+ *  keeping the same user_id. Used by the login endpoint. */
+export function setRole(cookies: Cookies, role: Role | undefined): string {
+	const existing = readUserId(cookies) ?? crypto.randomUUID();
+	setUserIdCookie(cookies, existing, role);
+	return existing;
 }
 
 /**

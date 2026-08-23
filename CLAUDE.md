@@ -22,7 +22,9 @@ The API is the contract. Keep it stable and explicit.
 - `QUAPPE_SEED_COUNT=100000 npm run dev` — override seed size for stress tests.
 - `QUAPPE_DB_PATH=/tmp/foo.db npm run dev` — point at a different SQLite file. Default is `.data/quappe.db`.
 
-Env: `QUAPPE_SECRET` (JWT signing secret — set it in prod so identities survive restarts), plus Ollama defaults `OLLAMA_URL=http://127.0.0.1:11434`, `OLLAMA_MODEL=qwen2.5:3b`, `OLLAMA_TIMEOUT=60000`. Without Ollama, report endpoints degrade to a "LLM unavailable" fallback — nothing else depends on it. `QUAPPE_IMPORT_SECRET` enables the issue-tracker bridge import endpoints (`/api/import/theses`); if unset, import is disabled (401). `QUAPPE_ADMIN_SECRET` guards admin endpoints (`/api/admin/*` writes, thesis archive) via the `x-admin-secret` header; if unset, admin is **locked** (403), not open.
+Env: `QUAPPE_SECRET` (JWT signing secret — set it in prod so identities survive restarts), plus Ollama defaults `OLLAMA_URL=http://127.0.0.1:11434`, `OLLAMA_MODEL=qwen2.5:3b`, `OLLAMA_TIMEOUT=60000`. Without Ollama, report endpoints degrade to a "LLM unavailable" fallback — nothing else depends on it. `QUAPPE_IMPORT_SECRET` enables the issue-tracker bridge import endpoints (`/api/import/theses`); if unset, import is disabled (401). `QUAPPE_ADMIN_SECRET` guards admin endpoints (`/api/admin/*` writes, thesis archive, reset) via the `x-admin-secret` header or an `admin`-role cookie; if unset, admin is **locked** (403), not open.
+
+**Two-world config (one codebase, two instances):** `AUTH_MODE=anonymous` (default, e.g. quappe.org) — everyone gets an anonymous identity, no login, seeds demo data. `AUTH_MODE=gated` (business instance) — writes require a login: `QUAPPE_ACCESS_SECRET` grants a `member` identity, `QUAPPE_ADMIN_SECRET` grants `admin`; gated instances never auto-seed and reset empty. Login flow: `POST /api/auth/login {secret}` → sets role on the identity cookie; `/api/auth/status` tells the client mode+role; `POST /api/auth/logout` clears the role. Full data reset (business per-iteration wipe): `POST /api/admin/reset` (admin-gated, needs `x-confirm-reset: yes`).
 
 ## Architecture
 

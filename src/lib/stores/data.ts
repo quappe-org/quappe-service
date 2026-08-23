@@ -8,7 +8,7 @@ import { normalizeVoteWeight } from '../models/fibonacci.ts';
 import { logger } from './logger.ts';
 import { extractHashtags, extractHashtagsFrom } from '../hashtags.ts';
 
-import { withTransaction } from '../server/db/index.ts';
+import { withTransaction, dbWipeAll } from '../server/db/index.ts';
 import {
 	dbDeleteThesis,
 	dbGetAllTheses,
@@ -292,6 +292,18 @@ export function purgeImportedTheses(sourcePrefix: string): string[] {
 	if (ids.length > 0) bumpVersion();
 	logger.info('store', 'imported theses purged', { source: sourcePrefix, count: ids.length });
 	return ids;
+}
+
+// Full reset — wipe all domain data (theses, arguments, votes, embeddings,
+// read markers). Keeps the schema and, by default, the settings row (banner).
+// Also clears the in-memory embedding mirrors and derived caches. Used by the
+// admin reset endpoint on business instances that reset per iteration.
+export function resetAllData(keepSettings = true): void {
+	dbWipeAll(keepSettings);
+	_thesis_embeddings = new Map();
+	_argument_embeddings = new Map();
+	bumpVersion();
+	logger.warn('store', 'ALL DATA RESET', { keepSettings });
 }
 
 export function updateThesis(
@@ -1000,6 +1012,10 @@ const THESIS_SEEDS: ThesisSeed[] = [
 ];
 
 export function seedData(devUserId?: string): void {
+	// Gated (business) instances never auto-seed demo data — they start empty
+	// and reset empty. Only the anonymous/consumer instance gets the sample set.
+	if (process.env.AUTH_MODE === 'gated') return;
+
 	// Gate on empty DB — replaces the old "any-map-non-empty" check.
 	// The seed writes to SQLite in a single transaction; a second run would violate PKs.
 	const stats = dbTierStats();
