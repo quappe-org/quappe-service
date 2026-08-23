@@ -4,6 +4,7 @@ import {
 	getAllTheses,
 	getTrendingTheses,
 	getTopTheses,
+	getCrystallizedTheses,
 	createThesis,
 	setThesisEmbedding,
 	setThesisLang,
@@ -21,6 +22,7 @@ export const GET: RequestHandler = async ({ url }) => {
 
 	const trending = url.searchParams.get('trending');
 	const top = url.searchParams.get('top');
+	const crystallized = url.searchParams.get('crystallized');
 	const limitParam = url.searchParams.get('limit');
 	const offsetParam = url.searchParams.get('offset');
 	const limit = limitParam ? parseInt(limitParam, 10) : 10;
@@ -37,6 +39,11 @@ export const GET: RequestHandler = async ({ url }) => {
 
 	if (top === 'true') {
 		const ranked = getTopTheses(window);
+		return json(ranked.slice(offset));
+	}
+
+	if (crystallized === 'true') {
+		const ranked = getCrystallizedTheses(window);
 		return json(ranked.slice(offset));
 	}
 

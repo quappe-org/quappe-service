@@ -655,6 +655,21 @@ export function getTopTheses(limit: number = 10): Thesis[] {
 	return withCount.slice(0, limit).map((x) => x.thesis);
 }
 
+// Crystallized: theses that reached a settled majority position with solid
+// arguments. Only the 'crystallized' lifecycle state, ranked by quality.
+export function getCrystallizedTheses(limit: number = 10): Thesis[] {
+	const scored: { thesis: Thesis; score: number }[] = [];
+	for (const t of dbGetHotTheses()) {
+		if (t.archived) continue;
+		if (t.lifecycle.state !== 'crystallized') continue;
+		let support = 0;
+		for (const v of t.votes) if (v.type === 'support') support++;
+		scored.push({ thesis: t, score: t.lifecycle.quality_score * 1000 + support });
+	}
+	scored.sort((a, b) => b.score - a.score);
+	return scored.slice(0, limit).map((x) => x.thesis);
+}
+
 // ---- Argument operations ----
 
 export function getArgumentsForThesis(thesis_id: string): Argument[] {
