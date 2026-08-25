@@ -10,6 +10,7 @@ import { detectLanguage } from '$lib/server/language-detect';
 import { extractHashtags, extractHashtagsFrom } from '$lib/hashtags';
 import { ensureUserId, readRole } from '$lib/server/identity';
 import { authMode } from '$lib/server/auth-config';
+import { isAdmin } from '$lib/server/admin-auth';
 import { seedOnce, isSeeded } from '$lib/server/dev-seed';
 import { paraglideMiddleware } from '$lib/paraglide/server';
 import { getDb } from '$lib/server/db';
@@ -227,7 +228,10 @@ export const handle: Handle = async ({ event, resolve }) => {
 		// Gated (business) instances: writes require a logged-in identity (any
 		// role). Anonymous callers must hit /api/auth/login first. Auth and
 		// import endpoints are exempt (import has its own secret; login must be
-		// reachable). Anonymous mode (quappe.org) skips this entirely.
+		// reachable). Admin endpoints called with a valid `x-admin-secret` header
+		// are also exempt — the header is an operator/bridge credential that must
+		// keep working without going through the cookie-login flow. Anonymous
+		// mode (quappe.org) skips this entirely.
 		if (
 			isApi &&
 			authMode() === 'gated' &&
@@ -236,7 +240,9 @@ export const handle: Handle = async ({ event, resolve }) => {
 			!path.startsWith('/api/auth/') &&
 			!path.startsWith('/api/import/')
 		) {
-			if (readRole(event.cookies) === null) {
+			const hasRole = readRole(event.cookies) !== null;
+			const hasAdminHeader = path.startsWith('/api/admin/') && isAdmin(event.request, event.cookies);
+			if (!hasRole && !hasAdminHeader) {
 				return json({ error: 'Login required', code: 'login_required' }, { status: 401 });
 			}
 		}
