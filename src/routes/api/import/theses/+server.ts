@@ -2,6 +2,7 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { importThesis, listImportedTheses, purgeImportedTheses, type ImportThesisInput } from '$lib/stores/data';
 import { DEFAULT_CATEGORIES } from '$lib/models/types';
+import { logger } from '$lib/stores/logger';
 
 // Bulk import endpoint for issue-tracker bridges. Not part of the user flow:
 // guarded by a shared secret (QUAPPE_IMPORT_SECRET), bypasses budget/rate
@@ -40,7 +41,10 @@ function normalizeCategories(cats: string[] | undefined): string[] {
 }
 
 export const POST: RequestHandler = async ({ request }) => {
-	if (!authorized(request)) return json({ error: 'Unauthorized' }, { status: 401 });
+	if (!authorized(request)) {
+		logger.warn('import', 'POST rejected — bad or missing x-import-secret');
+		return json({ error: 'Unauthorized' }, { status: 401 });
+	}
 
 	const body = await request.json().catch(() => null);
 	const items: ImportItem[] = Array.isArray(body?.theses) ? body.theses : [];
@@ -67,6 +71,11 @@ export const POST: RequestHandler = async ({ request }) => {
 		results.push({ external_ref: item.external_ref, id: thesis.id, created: wasCreated });
 	}
 
+	logger.info('import', 'bulk upsert complete', {
+		created,
+		updated,
+		total: results.length
+	});
 	return json({ ok: true, created, updated, total: results.length, results }, { status: 200 });
 };
 
@@ -87,5 +96,6 @@ export const DELETE: RequestHandler = async ({ request, url }) => {
 	const source = url.searchParams.get('source');
 	if (!source) return json({ error: 'Missing ?source=' }, { status: 400 });
 	const ids = purgeImportedTheses(source);
+	logger.info('import', 'purged source', { source, purged: ids.length });
 	return json({ ok: true, source, purged: ids.length });
 };

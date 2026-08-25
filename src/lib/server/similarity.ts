@@ -3,6 +3,7 @@
 
 import type { Thesis, Argument, Category } from '$lib/models/types';
 import { embed, isModelWarm } from './embeddings';
+import { logger } from '$lib/stores/logger';
 
 // ---- Core math ----
 
@@ -52,6 +53,11 @@ export async function suggestCategories(
 
 	scores.sort((a, b) => b.score - a.score);
 	const confident = scores.filter((s) => s.score >= minScore).slice(0, topN).map((s) => s.cat);
+	logger.debug('similarity', 'category suggestion', {
+		top3: scores.slice(0, 3).map((s) => `${s.cat}=${s.score.toFixed(3)}`),
+		threshold: minScore,
+		result: confident.length > 0 ? confident : ['(fallback)']
+	});
 	if (confident.length > 0) return confident;
 	return categories.includes('other') ? ['other'] : [];
 }

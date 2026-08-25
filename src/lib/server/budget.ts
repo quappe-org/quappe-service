@@ -15,6 +15,7 @@ import { json } from '@sveltejs/kit';
 import type { Cookies } from '@sveltejs/kit';
 import { getThesesByAuthor, getArgumentsByAuthor, getVotesByUserSince } from '$lib/stores/data';
 import { identityAgeMs } from '$lib/server/identity';
+import { logger } from '$lib/stores/logger';
 
 // Fibonacci-flavoured daily limits.
 export const BUDGET = {
@@ -72,6 +73,7 @@ function mk(spent: number, limit: number) {
 export function checkThesisBudget(user_id: string): Response | null {
 	const s = getBudgetStatus(user_id);
 	if (s.theses.remaining <= 0) {
+		logger.info('budget', 'thesis budget exhausted', { user_id, limit: s.theses.limit });
 		return json(
 			{ error: 'Daily thesis budget reached. Come back tomorrow — input should have value.' },
 			{ status: 429 }
@@ -83,6 +85,7 @@ export function checkThesisBudget(user_id: string): Response | null {
 export function checkArgumentBudget(user_id: string): Response | null {
 	const s = getBudgetStatus(user_id);
 	if (s.arguments.remaining <= 0) {
+		logger.info('budget', 'argument budget exhausted', { user_id, limit: s.arguments.limit });
 		return json(
 			{ error: 'Daily argument budget reached. Come back tomorrow — input should have value.' },
 			{ status: 429 }
@@ -104,6 +107,11 @@ export function checkWeightBudget(
 	const s = getBudgetStatus(user_id);
 	const netNeeded = extra - Math.max(0, alreadySpentOnThisTarget - 0);
 	if (netNeeded > s.weight_points.remaining) {
+		logger.info('budget', 'weight budget exhausted', {
+			user_id,
+			requested: requestedWeight,
+			remaining: s.weight_points.remaining
+		});
 		return json(
 			{ error: 'Daily weight budget reached — base votes are still free.' },
 			{ status: 429 }
@@ -123,7 +131,12 @@ export function checkIdentityMaturityForWeight(
 	requestedWeight: number
 ): Response | null {
 	if (requestedWeight <= 1) return null; // base votes always allowed
-	if (identityAgeMs(cookies) < MIN_IDENTITY_AGE_FOR_WEIGHT_MS) {
+	const ageMs = identityAgeMs(cookies);
+	if (ageMs < MIN_IDENTITY_AGE_FOR_WEIGHT_MS) {
+		logger.warn('budget', 'sybil dampener blocked weighted vote', {
+			requested: requestedWeight,
+			identity_age_ms: ageMs
+		});
 		return json(
 			{ error: 'New identities can cast base votes only for the first minute.' },
 			{ status: 429 }

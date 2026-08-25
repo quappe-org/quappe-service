@@ -5,6 +5,7 @@
 
 import { json } from '@sveltejs/kit';
 import { DEFAULT_CATEGORIES } from '$lib/models/types';
+import { logger } from '$lib/stores/logger';
 
 export const LIMITS = {
 	thesis_title: 200,
@@ -146,6 +147,7 @@ export function checkRate(
 	const policy = POLICIES[klass];
 	const ipKey = `${klass}:ip:${ip}`;
 	if (!take(ipKey, policy)) {
+		logger.warn('ratelimit', 'ip bucket exhausted', { klass, ip });
 		return json(
 			{ error: 'Too many requests. Slow down.' },
 			{ status: 429, headers: { 'Retry-After': '60' } }
@@ -154,6 +156,7 @@ export function checkRate(
 	if (user_id) {
 		const userKey = `${klass}:u:${user_id}`;
 		if (!take(userKey, policy)) {
+			logger.warn('ratelimit', 'user bucket exhausted', { klass, user_id });
 			return json(
 				{ error: 'Too many requests for this user. Slow down.' },
 				{ status: 429, headers: { 'Retry-After': '60' } }
