@@ -1,13 +1,19 @@
 openapi: 3.1.0
 info:
   title: Quappe Service API
-  version: 0.1.6
+  version: 0.5.1
   description: >
     The Quappe API — theses, arguments, votes, and derived reports. Single
     source of truth for all clients (web, future CLI/app/analytics). Identity is
     an anonymous server-minted JWT set as an httpOnly cookie (`quappe_uid`);
     clients never send a user id — the cookie is authoritative. This spec is the
     contract; keep it in sync when endpoints change.
+
+
+    Two-world config: `AUTH_MODE=anonymous` (default, e.g. quappe.org) needs no
+    login. `AUTH_MODE=gated` (business instance) requires a `/api/auth/login`
+    call before any write; admin endpoints additionally accept the operator
+    header `x-admin-secret`.
   license:
     name: PolyForm Noncommercial 1.0.0
     url: https://polyformproject.org/licenses/noncommercial/1.0.0
@@ -23,16 +29,21 @@ tags:
   - name: votes
   - name: reports
   - name: meta
+  - name: auth
+  - name: admin
+  - name: import
 
 paths:
   /api/theses:
     get:
       tags: [theses]
-      summary: List theses (all / trending / top)
+      summary: List theses (all / trending / top / crystallized)
       parameters:
         - { name: trending, in: query, schema: { type: boolean } }
         - { name: top, in: query, schema: { type: boolean } }
+        - { name: crystallized, in: query, schema: { type: boolean } }
         - { name: limit, in: query, schema: { type: integer, default: 10 } }
+        - { name: offset, in: query, schema: { type: integer, default: 0 } }
       responses:
         '200':
           description: Array of theses
@@ -52,8 +63,16 @@ paths:
           description: Created thesis (plus suggested_categories)
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/Thesis' }
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Thesis'
+                  - type: object
+                    properties:
+                      suggested_categories:
+                        type: array
+                        items: { type: string }
         '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/LoginRequired' }
         '413': { $ref: '#/components/responses/TooLarge' }
         '429': { $ref: '#/components/responses/RateLimited' }
 
@@ -78,12 +97,14 @@ paths:
             schema: { $ref: '#/components/schemas/ThesisUpdate' }
       responses:
         '200': { content: { application/json: { schema: { $ref: '#/components/schemas/Thesis' } } } }
+        '401': { $ref: '#/components/responses/LoginRequired' }
         '403': { $ref: '#/components/responses/Forbidden' }
     delete:
       tags: [theses]
       summary: Delete a thesis (author only)
       responses:
         '200': { $ref: '#/components/responses/Ok' }
+        '401': { $ref: '#/components/responses/LoginRequired' }
         '403': { $ref: '#/components/responses/Forbidden' }
 
   /api/theses/{id}/vote:
@@ -107,6 +128,7 @@ paths:
                   vote_summary: { $ref: '#/components/schemas/VoteSummary' }
                   user_id: { type: string }
                   weight: { type: integer }
+        '401': { $ref: '#/components/responses/LoginRequired' }
         '404': { $ref: '#/components/responses/NotFound' }
         '429': { $ref: '#/components/responses/RateLimited' }
 
@@ -118,7 +140,9 @@ paths:
       summary: Archive / unarchive a thesis (admin)
       requestBody:
         content: { application/json: { schema: { type: object, properties: { archived: { type: boolean } } } } }
-      responses: { '200': { $ref: '#/components/responses/Ok' } }
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '403': { $ref: '#/components/responses/Forbidden' }
 
   /api/theses/{id}/related:
     parameters:
@@ -162,6 +186,36 @@ paths:
                   target: { type: string }
         '503': { description: LLM unavailable }
 
+  /api/theses/{id}/opinion-graph:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      tags: [theses]
+      summary: >
+        For each argument on the thesis, break down its approvers by their own
+        vote on the thesis (support/reject/neutral). This is the emergent
+        replacement for author-declared stance.
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  thesis_id: { type: string, format: uuid }
+                  arguments:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        argument_id: { type: string, format: uuid }
+                        by_stance:
+                          type: object
+                          properties:
+                            support: { type: integer }
+                            reject: { type: integer }
+                            neutral: { type: integer }
+
   /api/theses/draft-variant:
     post:
       tags: [theses]
@@ -188,6 +242,30 @@ paths:
                   variant: { type: string }
         '503': { description: LLM unavailable }
 
+  /api/theses/similar:
+    get:
+      tags: [theses]
+      summary: >
+        Strict near-duplicate probe (used by the create-thesis flow).
+        Empty result means "your thesis looks new" — a common, correct case.
+      parameters:
+        - { name: q, in: query, required: true, schema: { type: string } }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items:
+                      allOf:
+                        - $ref: '#/components/schemas/Thesis'
+                        - type: object
+                          properties:
+                            _score: { type: number }
+
   /api/arguments:
     get:
       tags: [arguments]
@@ -210,6 +288,7 @@ paths:
       responses:
         '201': { content: { application/json: { schema: { $ref: '#/components/schemas/Argument' } } } }
         '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/LoginRequired' }
         '429': { $ref: '#/components/responses/RateLimited' }
 
   /api/arguments/{id}:
@@ -228,12 +307,14 @@ paths:
         content: { application/json: { schema: { type: object, properties: { content: { type: string } } } } }
       responses:
         '200': { content: { application/json: { schema: { $ref: '#/components/schemas/Argument' } } } }
+        '401': { $ref: '#/components/responses/LoginRequired' }
         '403': { $ref: '#/components/responses/Forbidden' }
     delete:
       tags: [arguments]
       summary: Delete an argument (author only)
       responses:
         '200': { $ref: '#/components/responses/Ok' }
+        '401': { $ref: '#/components/responses/LoginRequired' }
         '403': { $ref: '#/components/responses/Forbidden' }
 
   /api/arguments/{id}/vote:
@@ -241,7 +322,9 @@ paths:
       - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
     post:
       tags: [votes]
-      summary: Vote on an argument (one vote per fork group; voting a variant moves it off siblings)
+      summary: >
+        Vote on an argument. Requires a prior vote on the parent thesis;
+        one vote per fork group (voting a variant moves it off siblings).
       requestBody:
         required: true
         content:
@@ -255,6 +338,7 @@ paths:
                 type: object
                 properties:
                   vote_summary: { $ref: '#/components/schemas/VoteSummary' }
+        '401': { $ref: '#/components/responses/LoginRequired' }
         '404': { $ref: '#/components/responses/NotFound' }
 
   /api/search:
@@ -321,31 +405,313 @@ paths:
       responses:
         '200': { content: { application/json: { schema: { type: object, properties: { user_id: { type: string } } } } } }
 
+  /api/openapi:
+    get:
+      tags: [meta]
+      summary: Serves this OpenAPI spec as raw YAML
+      responses:
+        '200':
+          content:
+            application/yaml:
+              schema: { type: string }
+
   /api/reports/me:
-    get: { tags: [reports], summary: Personal activity report, responses: { '200': { $ref: '#/components/responses/Ok' } } }
+    get:
+      tags: [reports]
+      summary: Personal activity report (LLM-flavoured)
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+
   /api/reports/pulse:
     get:
       tags: [reports]
       summary: Community pulse (LLM summary + stats, 24h-cached)
       responses:
         '200': { content: { application/json: { schema: { $ref: '#/components/schemas/PulseBody' } } } }
+
   /api/reports/updates:
     get:
       tags: [reports]
-      summary: The caller's update feed (forks, new arguments, lifecycle) within 7 days
-      responses: { '200': { $ref: '#/components/responses/Ok' } }
+      summary: >
+        The caller's update feed within the last 7 days. Aggregates forks of
+        the caller's arguments, new arguments on the caller's theses, and
+        lifecycle transitions on theses the caller supports. Self-actions and
+        lifecycle events triggered by the caller's own recent activity are
+        filtered out (Bug 2 fix).
+      responses:
+        '200': { content: { application/json: { schema: { $ref: '#/components/schemas/UpdatesBody' } } } }
+    put:
+      tags: [reports]
+      summary: Mark update events as read
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [event_keys]
+              properties:
+                event_keys:
+                  type: array
+                  items: { type: string }
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+
+  /api/auth/login:
+    post:
+      tags: [auth]
+      summary: >
+        Gated-mode login. Presenting the admin secret elevates the identity
+        cookie to role `admin`; the access secret elevates to `member`. In
+        anonymous mode this endpoint returns 403 (login is a no-op there).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [secret]
+              properties:
+                secret: { type: string }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  role: { type: string, enum: [admin, member] }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { description: Invalid secret }
+        '403': { description: Login disabled (anonymous mode) }
+
+  /api/auth/logout:
+    post:
+      tags: [auth]
+      summary: Drop any elevated role, keeping the same anonymous identity
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+
+  /api/auth/status:
+    get:
+      tags: [auth]
+      summary: The caller's auth mode + current role (client-config oracle)
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mode: { type: string, enum: [anonymous, gated] }
+                  role: { type: string, enum: [admin, member], nullable: true }
+                  user_id: { type: string }
+                  needs_login: { type: boolean }
+
+  /api/admin/banner:
+    get:
+      tags: [admin]
+      summary: Read the current site-wide banner (public)
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { type: object, properties: { text: { type: string } } }
+    put:
+      tags: [admin]
+      summary: Set (or clear) the site-wide banner text (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                text: { type: string }
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '401': { $ref: '#/components/responses/LoginRequired' }
+        '403': { $ref: '#/components/responses/Forbidden' }
 
   /api/admin/logs:
-    get: { tags: [meta], summary: Ring-buffer server logs (hidden admin console), responses: { '200': { $ref: '#/components/responses/Ok' } } }
-    delete: { tags: [meta], summary: Clear the log buffer, responses: { '200': { $ref: '#/components/responses/Ok' } } }
+    get:
+      tags: [admin]
+      summary: Ring-buffer server logs (hidden admin console)
+      parameters:
+        - { name: since, in: query, schema: { type: integer, default: 0 } }
+        - { name: limit, in: query, schema: { type: integer, default: 500 } }
+        - { name: level, in: query, schema: { type: string, enum: [debug, info, warn, error] } }
+        - { name: source, in: query, schema: { type: string } }
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    delete:
+      tags: [admin]
+      summary: Clear the log buffer (admin)
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '401': { $ref: '#/components/responses/LoginRequired' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/admin/users:
+    get:
+      tags: [admin]
+      summary: Distinct-voter counts (total + per-day) for the last N days
+      parameters:
+        - { name: days, in: query, schema: { type: integer, default: 30, minimum: 1, maximum: 365 } }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total_users: { type: integer }
+                  daily:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        date: { type: string }
+                        voters: { type: integer }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/admin/reset:
+    post:
+      tags: [admin]
+      summary: >
+        Wipe all theses/arguments/votes/embeddings (business per-iteration
+        reset). Requires admin AND the confirm header `x-confirm-reset: yes`.
+      parameters:
+        - name: x-confirm-reset
+          in: header
+          required: true
+          schema: { type: string, enum: [yes] }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                keep_settings: { type: boolean, default: true }
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/LoginRequired' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/import/theses:
+    post:
+      tags: [import]
+      summary: >
+        Bulk upsert theses from an issue-tracker bridge. Requires the header
+        `x-import-secret` matching `QUAPPE_IMPORT_SECRET`. Bypasses budget and
+        rate limits; idempotent via `external_ref`.
+      parameters:
+        - name: x-import-secret
+          in: header
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [theses]
+              properties:
+                theses:
+                  type: array
+                  items:
+                    type: object
+                    required: [external_ref, title, description]
+                    properties:
+                      external_ref: { type: string }
+                      title: { type: string }
+                      description: { type: string }
+                      categories: { type: array, items: { type: string } }
+                      hashtags: { type: array, items: { type: string } }
+                      archived: { type: boolean }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  created: { type: integer }
+                  updated: { type: integer }
+                  total: { type: integer }
+                  results:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        external_ref: { type: string }
+                        id: { type: string, format: uuid }
+                        created: { type: boolean }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { description: Missing or wrong x-import-secret }
+    get:
+      tags: [import]
+      summary: List existing imported theses for a source (idempotent-sync helper)
+      parameters:
+        - name: x-import-secret
+          in: header
+          required: true
+          schema: { type: string }
+        - name: source
+          in: query
+          required: true
+          schema: { type: string, example: 'github:owner/repo' }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  source: { type: string }
+                  count: { type: integer }
+                  refs:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        external_ref: { type: string }
+                        id: { type: string, format: uuid }
+                        title: { type: string }
+        '401': { description: Missing or wrong x-import-secret }
+    delete:
+      tags: [import]
+      summary: Purge all theses previously imported from a source
+      parameters:
+        - name: x-import-secret
+          in: header
+          required: true
+          schema: { type: string }
+        - name: source
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '401': { description: Missing or wrong x-import-secret }
 
 components:
   responses:
     Ok: { description: Success }
     BadRequest: { description: Invalid input, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
-    Forbidden: { description: Not allowed (e.g. not the author), content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    LoginRequired:
+      description: >
+        Gated-mode write attempted without a logged-in role. Call
+        `/api/auth/login` first (or send `x-admin-secret` on admin endpoints).
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    Forbidden: { description: Not allowed (e.g. not the author, or wrong admin secret), content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
     NotFound: { description: Resource not found, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
-    TooLarge: { description: Field exceeds length cap }
+    TooLarge: { description: Field or request body exceeds length cap }
     RateLimited: { description: Rate limit or daily budget exhausted, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
 
   schemas:
@@ -353,10 +719,12 @@ components:
       type: object
       properties:
         error: { type: string }
+        code: { type: string, description: 'e.g. `login_required` (401 in gated mode)' }
 
     VoteType: { type: string, enum: [support, reject, neutral] }
     EvidenceType: { type: string, enum: [study, authority, logical, experiential] }
     LifecycleState: { type: string, enum: [seedling, discussed, contested, crystallized, faded, dormant] }
+    UpdateKind: { type: string, enum: [fork, new_argument, lifecycle] }
 
     Vote:
       type: object
@@ -416,6 +784,7 @@ components:
             state_since: { type: string, format: date-time }
             quality_score: { type: number }
         lang: { type: string, nullable: true }
+        external_ref: { type: string, nullable: true, description: 'Set for bridge-imported theses' }
         meta: { $ref: '#/components/schemas/Meta' }
 
     ThesisCreate:
@@ -491,12 +860,64 @@ components:
         stats: { type: object }
         llm: { type: object }
 
+    UpdateEvent:
+      type: object
+      properties:
+        kind: { $ref: '#/components/schemas/UpdateKind' }
+        event_key: { type: string, description: stable id for read-tracking }
+        read: { type: boolean }
+        at: { type: string, format: date-time }
+        thesis_id: { type: string, format: uuid }
+        thesis_title: { type: string }
+        original_argument_id: { type: string, format: uuid }
+        original_content: { type: string }
+        original_votes: { type: integer }
+        fork_argument_id: { type: string, format: uuid }
+        fork_content: { type: string }
+        fork_votes: { type: integer }
+        argument_id: { type: string, format: uuid }
+        argument_content: { type: string }
+        lifecycle_state: { $ref: '#/components/schemas/LifecycleState' }
+
+    UpdatesBody:
+      type: object
+      properties:
+        user_id: { type: string }
+        generated_at: { type: string, format: date-time }
+        events: { type: array, items: { $ref: '#/components/schemas/UpdateEvent' } }
+        counts:
+          type: object
+          properties:
+            forks: { type: integer }
+            new_arguments: { type: integer }
+            lifecycle: { type: integer }
+            total: { type: integer }
+            unread: { type: integer }
+
   securitySchemes:
     quappeCookie:
       type: apiKey
       in: cookie
       name: quappe_uid
-      description: Anonymous server-minted JWT. Set automatically; do not send a user id in bodies.
+      description: >
+        Anonymous server-minted JWT. Set automatically; do not send a user id
+        in bodies. In gated mode, calling `/api/auth/login` elevates the same
+        cookie to `role: admin` or `role: member`.
+    adminSecretHeader:
+      type: apiKey
+      in: header
+      name: x-admin-secret
+      description: >
+        Operator/bridge credential. Accepted on all `/api/admin/*` endpoints
+        even in gated mode (bypasses the cookie-login wall). Matches
+        `QUAPPE_ADMIN_SECRET`.
+    importSecretHeader:
+      type: apiKey
+      in: header
+      name: x-import-secret
+      description: >
+        Bridge credential for `/api/import/*`. Matches `QUAPPE_IMPORT_SECRET`.
+        If the env var is unset, all import endpoints return 401.
 
 security:
   - quappeCookie: []
