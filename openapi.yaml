@@ -879,20 +879,45 @@ components:
         argument_content: { type: string }
         lifecycle_state: { $ref: '#/components/schemas/LifecycleState' }
 
+    UpdateGroup:
+      type: object
+      description: >
+        Per-thesis rollup of the raw events. The personal feed on the web
+        client renders one card per group. `event_keys` lets the client PUT
+        the whole group as read in a single call.
+      properties:
+        thesis_id: { type: string, format: uuid }
+        thesis_title: { type: string }
+        last_at: { type: string, format: date-time, description: newest underlying event }
+        read: { type: boolean, description: true only when every underlying event is read }
+        new_arguments: { type: integer, description: count of foreign arguments on my thesis in the window }
+        forks: { type: integer, description: count of forks of my arguments on this thesis }
+        lifecycle_state:
+          allOf:
+            - $ref: '#/components/schemas/LifecycleState'
+          description: latest transition, if any occurred
+        lifecycle_since: { type: string, format: date-time, description: when that transition happened }
+        event_keys:
+          type: array
+          items: { type: string }
+
     UpdatesBody:
       type: object
       properties:
         user_id: { type: string }
         generated_at: { type: string, format: date-time }
         events: { type: array, items: { $ref: '#/components/schemas/UpdateEvent' } }
+        groups: { type: array, items: { $ref: '#/components/schemas/UpdateGroup' } }
         counts:
           type: object
           properties:
             forks: { type: integer }
             new_arguments: { type: integer }
             lifecycle: { type: integer }
-            total: { type: integer }
-            unread: { type: integer }
+            total: { type: integer, description: total raw events }
+            groups: { type: integer, description: number of per-thesis groups }
+            unread: { type: integer, description: unread raw events }
+            unread_groups: { type: integer, description: groups with at least one unread event — the number to badge }
 
   securitySchemes:
     quappeCookie:

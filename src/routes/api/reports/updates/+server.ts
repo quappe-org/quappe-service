@@ -4,6 +4,14 @@
 // 3. Lifecycle transitions on theses the user supported (within last 14 days)
 //
 // Self-actions (user reacting to their own content) are filtered out.
+//
+// Response shape:
+// - `events` — raw list, one entry per underlying signal (kept for the
+//   PUT read-marking flow and for consumers that want the fine grain).
+// - `groups` — one aggregated summary per thesis, the shape the personal
+//   feed on the web landing renders. A group is unread iff any of its
+//   underlying events is unread; marking a group read PUTs all its
+//   `event_keys` at once.
 
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
@@ -41,16 +49,31 @@ interface UpdateEvent {
 	lifecycle_state?: string;
 }
 
+interface UpdateGroup {
+	thesis_id: string;
+	thesis_title: string;
+	last_at: string; // ISO of the newest underlying event — for sorting
+	read: boolean; // true only when every underlying event is read
+	new_arguments: number; // count of foreign arguments on my thesis in the window
+	forks: number; // count of forks of my arguments on this thesis in the window
+	lifecycle_state?: string; // most recent transition, if any
+	lifecycle_since?: string; // ISO of that transition
+	event_keys: string[]; // for PUT-marking the whole group in one call
+}
+
 interface UpdatesBody {
 	user_id: string;
 	generated_at: string;
 	events: UpdateEvent[];
+	groups: UpdateGroup[];
 	counts: {
 		forks: number;
 		new_arguments: number;
 		lifecycle: number;
-		total: number;
-		unread: number;
+		total: number; // total events (unchanged for callers watching the raw counter)
+		groups: number; // number of aggregated theses (what the badge should count)
+		unread: number; // unread events
+		unread_groups: number; // theses with at least one unread event
 	};
 }
 
@@ -190,16 +213,54 @@ function aggregate(user_id: string): UpdatesBody {
 		else if (e.kind === 'lifecycle') lifecycle++;
 	}
 
+	// ---- Groups: one row per thesis, in-place merge of the raw events.
+	// `events` is already sorted newest-first, so the first time we see a
+	// thesis becomes its `last_at`. For lifecycle we always overwrite (there
+	// is at most one lifecycle event per thesis in `events`, and it's the
+	// newest transition — see the loop above).
+	const byThesis = new Map<string, UpdateGroup>();
+	for (const e of events) {
+		let g = byThesis.get(e.thesis_id);
+		if (!g) {
+			g = {
+				thesis_id: e.thesis_id,
+				thesis_title: e.thesis_title,
+				last_at: e.at,
+				read: true, // will flip to false if any event is unread
+				new_arguments: 0,
+				forks: 0,
+				event_keys: []
+			};
+			byThesis.set(e.thesis_id, g);
+		}
+		g.event_keys.push(e.event_key);
+		if (!e.read) g.read = false;
+		if (e.at > g.last_at) g.last_at = e.at;
+		if (e.kind === 'new_argument') g.new_arguments++;
+		else if (e.kind === 'fork') g.forks++;
+		else if (e.kind === 'lifecycle') {
+			g.lifecycle_state = e.lifecycle_state;
+			g.lifecycle_since = e.at;
+		}
+	}
+	const groups = Array.from(byThesis.values()).sort((a, b) =>
+		a.last_at < b.last_at ? 1 : a.last_at > b.last_at ? -1 : 0
+	);
+	const unread_groups = groups.reduce((n, g) => n + (g.read ? 0 : 1), 0);
+
 	return {
 		user_id,
 		generated_at: new Date().toISOString(),
 		events,
+		groups,
 		counts: {
 			forks,
 			new_arguments,
 			lifecycle,
 			total: events.length,
-			unread
+			groups: groups.length,
+			unread,
+			unread_groups
 		}
 	};
 }
