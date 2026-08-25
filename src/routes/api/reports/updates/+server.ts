@@ -13,7 +13,8 @@ import {
 	getArgumentsForThesis,
 	getForksOf,
 	getThesisById,
-	getAllTheses
+	getAllTheses,
+	getVotesByUserSince
 } from '$lib/stores/data';
 import { dbGetReadEventKeys, dbMarkUpdatesRead } from '$lib/server/db/read-updates';
 
@@ -121,7 +122,32 @@ function aggregate(user_id: string): UpdatesBody {
 	}
 
 	// 3. Lifecycle transitions on theses I supported. One entry per thesis,
-	// dated at `state_since`. Skips theses I authored (already covered by 1+2).
+	// dated at `state_since`. Skips theses I authored (already covered by 1+2),
+	// theses where `state_since` is still the creation timestamp (no actual
+	// transition happened yet — just the initial `seedling` stamp), and theses
+	// whose transition was triggered by the user's own recent activity (vote
+	// or argument within the 5 minutes leading up to `state_since`).
+	const SELF_TRIGGER_WINDOW_MS = 5 * 60 * 1000;
+	const windowStartIso = new Date(now - WINDOW_MS - SELF_TRIGGER_WINDOW_MS).toISOString();
+	const myRecentVotes = getVotesByUserSince(user_id, windowStartIso);
+	const myRecentArgs = myArgs;
+	function triggeredByMe(thesis_id: string, stateSinceIso: string): boolean {
+		const stateSinceMs = new Date(stateSinceIso).getTime();
+		if (!Number.isFinite(stateSinceMs)) return false;
+		const windowLoMs = stateSinceMs - SELF_TRIGGER_WINDOW_MS;
+		for (const v of myRecentVotes) {
+			if (v.thesis_id !== thesis_id) continue;
+			const t = new Date(v.cast_at).getTime();
+			if (Number.isFinite(t) && t >= windowLoMs && t <= stateSinceMs) return true;
+		}
+		for (const a of myRecentArgs) {
+			if (a.thesis_id !== thesis_id) continue;
+			const t = new Date(a.meta.created_at).getTime();
+			if (Number.isFinite(t) && t >= windowLoMs && t <= stateSinceMs) return true;
+		}
+		return false;
+	}
+
 	for (const t of getAllTheses()) {
 		if (t.meta.author_id === user_id) continue;
 		const myVote = t.votes.find((v) => v.user_id === user_id && v.type === 'support');
@@ -129,6 +155,10 @@ function aggregate(user_id: string): UpdatesBody {
 		const stateSince = t.lifecycle.state_since;
 		if (!stateSince) continue;
 		if (!withinWindow(stateSince)) continue;
+		// The initial `seedling` stamp equals the thesis creation timestamp;
+		// that's not a real transition and shouldn't ping supporters as news.
+		if (stateSince === t.meta.created_at) continue;
+		if (triggeredByMe(t.id, stateSince)) continue;
 		events.push({
 			kind: 'lifecycle',
 			event_key: '',
