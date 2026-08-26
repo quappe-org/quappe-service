@@ -16,6 +16,7 @@ import type { Cookies } from '@sveltejs/kit';
 import { getThesesByAuthor, getArgumentsByAuthor, getVotesByUserSince } from '$lib/stores/data';
 import { identityAgeMs } from '$lib/server/identity';
 import { logger } from '$lib/stores/logger';
+import { incCounter } from '$lib/server/metrics';
 
 // Fibonacci-flavoured daily limits.
 export const BUDGET = {
@@ -74,6 +75,7 @@ export function checkThesisBudget(user_id: string): Response | null {
 	const s = getBudgetStatus(user_id);
 	if (s.theses.remaining <= 0) {
 		logger.info('budget', 'thesis budget exhausted', { user_id, limit: s.theses.limit });
+		incCounter('quappe_budget_denials_total', 'Budget enforcement rejections', { bucket: 'thesis' });
 		return json(
 			{ error: 'Daily thesis budget reached. Come back tomorrow — input should have value.' },
 			{ status: 429 }
@@ -86,6 +88,7 @@ export function checkArgumentBudget(user_id: string): Response | null {
 	const s = getBudgetStatus(user_id);
 	if (s.arguments.remaining <= 0) {
 		logger.info('budget', 'argument budget exhausted', { user_id, limit: s.arguments.limit });
+		incCounter('quappe_budget_denials_total', 'Budget enforcement rejections', { bucket: 'argument' });
 		return json(
 			{ error: 'Daily argument budget reached. Come back tomorrow — input should have value.' },
 			{ status: 429 }
@@ -112,6 +115,7 @@ export function checkWeightBudget(
 			requested: requestedWeight,
 			remaining: s.weight_points.remaining
 		});
+		incCounter('quappe_budget_denials_total', 'Budget enforcement rejections', { bucket: 'weight' });
 		return json(
 			{ error: 'Daily weight budget reached — base votes are still free.' },
 			{ status: 429 }
@@ -137,6 +141,7 @@ export function checkIdentityMaturityForWeight(
 			requested: requestedWeight,
 			identity_age_ms: ageMs
 		});
+		incCounter('quappe_budget_denials_total', 'Budget enforcement rejections', { bucket: 'sybil' });
 		return json(
 			{ error: 'New identities can cast base votes only for the first minute.' },
 			{ status: 429 }

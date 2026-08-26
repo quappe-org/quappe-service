@@ -14,6 +14,7 @@ import { isAdmin } from '$lib/server/admin-auth';
 import { seedOnce, isSeeded } from '$lib/server/dev-seed';
 import { paraglideMiddleware } from '$lib/paraglide/server';
 import { getDb } from '$lib/server/db';
+import { incCounter, observeHistogram } from '$lib/server/metrics';
 
 // Open the SQLite database eagerly at startup so schema migrations run
 // before any request handler tries to read/write.
@@ -265,6 +266,15 @@ export const handle: Handle = async ({ event, resolve }) => {
 
 		// Skip asset chatter
 		if (isAsset) return response;
+
+		const status = String(response.status);
+		const method = event.request.method;
+		// Normalize path to avoid high-cardinality labels (replace UUIDs and numeric ids)
+		const metricPath = path.replace(/\/[0-9a-f-]{8,}/gi, '/:id').replace(/\/\d+/g, '/:id');
+		incCounter('quappe_api_requests_total', 'Total API requests', { method, path: metricPath, status });
+		if (isApi) {
+			observeHistogram('quappe_api_duration_seconds', 'API request duration in seconds', duration / 1000);
+		}
 
 		const level = response.status >= 500 ? 'error' : response.status >= 400 ? 'warn' : 'info';
 		const meta: Record<string, unknown> = {

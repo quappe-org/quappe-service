@@ -8,6 +8,7 @@
 // onnxruntime/protobufjs versions that resolved the audit advisories.
 
 import { env, pipeline } from '@huggingface/transformers';
+import { observeHistogram } from '$lib/server/metrics';
 
 // Cache model files in .cache dir relative to project root so they survive restarts
 env.cacheDir = './.cache/transformers';
@@ -48,7 +49,9 @@ export function isModelWarm(): boolean {
 export async function embed(text: string, role: 'query' | 'passage' = 'passage'): Promise<Float32Array> {
 	const p = await getPipeline();
 	const prefix = role === 'query' ? 'query: ' : 'passage: ';
+	const start = performance.now();
 	const output = await p(prefix + text.slice(0, 512), { pooling: 'mean', normalize: true });
+	observeHistogram('quappe_embedding_duration_seconds', 'Embedding inference duration in seconds', (performance.now() - start) / 1000);
 	// output.data is a Float32Array
 	return output.data as Float32Array;
 }

@@ -6,6 +6,7 @@
 import { json } from '@sveltejs/kit';
 import { DEFAULT_CATEGORIES } from '$lib/models/types';
 import { logger } from '$lib/stores/logger';
+import { incCounter } from '$lib/server/metrics';
 
 export const LIMITS = {
 	thesis_title: 200,
@@ -159,6 +160,7 @@ export function checkRate(
 		const userKey = `${klass}:u:${user_id}`;
 		if (!take(userKey, policy)) {
 			logger.warn('ratelimit', 'user bucket exhausted', { klass, user_id });
+			incCounter('quappe_ratelimit_denials_total', 'Rate-limit rejections', { klass, dimension: 'user' });
 			return json(
 				{ error: 'Too many requests for your session. Slow down.' },
 				{ status: 429, headers: { 'Retry-After': '60' } }
@@ -170,6 +172,7 @@ export function checkRate(
 	const ipKey = `${klass}:ip:${ip}`;
 	if (!take(ipKey, policy)) {
 		logger.warn('ratelimit', 'ip bucket exhausted', { klass, ip });
+		incCounter('quappe_ratelimit_denials_total', 'Rate-limit rejections', { klass, dimension: 'ip' });
 		return json(
 			{ error: 'Too many requests from your network. Slow down.' },
 			{ status: 429, headers: { 'Retry-After': '60' } }

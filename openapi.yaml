@@ -601,6 +601,18 @@ paths:
         '401': { $ref: '#/components/responses/LoginRequired' }
         '403': { $ref: '#/components/responses/Forbidden' }
 
+  /api/metrics:
+    get:
+      tags: [observability]
+      summary: Prometheus text-format metrics scrape endpoint.
+      security: []
+      responses:
+        '200':
+          description: Metrics in Prometheus text exposition format (text/plain; version=0.0.4).
+          content:
+            text/plain:
+              schema: { type: string }
+
   /api/import/theses:
     post:
       tags: [import]
