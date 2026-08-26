@@ -133,11 +133,19 @@ const POLICIES: Record<string, Policy> = {
 export type RateClass = keyof typeof POLICIES;
 
 /**
- * Rate-limit a request by IP + (optional) user_id. Returns a 429 Response if
- * the caller has exhausted either bucket, else null.
+ * Rate-limit a request by user_id (primary) and IP (secondary/fallback).
  *
- * We check both keys so a single IP can't spin up UUIDs to bypass, AND a
- * single UUID can't jump between IPs to bypass.
+ * Strategy:
+ *   - user_id (JWT cookie) is the authoritative key — it cannot be spoofed via
+ *     headers. When present, it is checked first and is sufficient on its own.
+ *   - IP is checked as a secondary guard: stops unauthenticated hammering and
+ *     provides a backstop when the cookie is absent (e.g. pre-identity requests).
+ *   - When both are present, BOTH buckets must have tokens — a single identity
+ *     can't bypass the IP cap by rotating, and a single IP can't bypass the user
+ *     cap by rotating UUIDs.
+ *
+ * 429 messages name the offending dimension so ops can distinguish session abuse
+ * from network-level floods.
  */
 export function checkRate(
 	ip: string,
@@ -145,31 +153,43 @@ export function checkRate(
 	klass: RateClass
 ): Response | null {
 	const policy = POLICIES[klass];
-	const ipKey = `${klass}:ip:${ip}`;
-	if (!take(ipKey, policy)) {
-		logger.warn('ratelimit', 'ip bucket exhausted', { klass, ip });
-		return json(
-			{ error: 'Too many requests. Slow down.' },
-			{ status: 429, headers: { 'Retry-After': '60' } }
-		);
-	}
+
+	// Primary: user_id bucket (JWT-authoritative, not spoofable via headers).
 	if (user_id) {
 		const userKey = `${klass}:u:${user_id}`;
 		if (!take(userKey, policy)) {
 			logger.warn('ratelimit', 'user bucket exhausted', { klass, user_id });
 			return json(
-				{ error: 'Too many requests for this user. Slow down.' },
+				{ error: 'Too many requests for your session. Slow down.' },
 				{ status: 429, headers: { 'Retry-After': '60' } }
 			);
 		}
 	}
+
+	// Secondary: IP bucket (fallback guard; always checked alongside user_id).
+	const ipKey = `${klass}:ip:${ip}`;
+	if (!take(ipKey, policy)) {
+		logger.warn('ratelimit', 'ip bucket exhausted', { klass, ip });
+		return json(
+			{ error: 'Too many requests from your network. Slow down.' },
+			{ status: 429, headers: { 'Retry-After': '60' } }
+		);
+	}
+
 	return null;
 }
 
-/** Client IP from a request event. Falls back to a constant so a proxy without
- * x-forwarded-for still triggers *some* bucket (better than nothing). */
+/** Client IP from a request event.
+ *
+ * In k8s, `X-Forwarded-For` is trivially spoofable by the client unless the
+ * ingress strips/overwrites it. We therefore prefer `clientAddress` (set by the
+ * SvelteKit adapter from the actual TCP peer, not from headers) and only fall
+ * back to `X-Forwarded-For` when `clientAddress` is absent — which only happens
+ * in environments where the header is trustworthy (e.g. behind a known proxy
+ * that we control). Falls back to 'unknown' so at least one bucket fires. */
 export function getClientIp(request: Request, clientAddress: string): string {
+	if (clientAddress) return clientAddress;
 	const fwd = request.headers.get('x-forwarded-for');
 	if (fwd) return fwd.split(',')[0].trim();
-	return clientAddress || 'unknown';
+	return 'unknown';
 }
