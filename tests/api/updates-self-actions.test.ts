@@ -34,13 +34,40 @@ async function createThesis(client: ApiClient, title: string): Promise<string> {
 			categories: ['economy']
 		});
 		if (retry.status !== 201) throw new Error(`createThesis retry failed: ${retry.status} ${await retry.text()}`);
-		return ((await retry.json()) as { id: string }).id;
+		const id = ((await retry.json()) as { id: string }).id;
+		markVoted(client, id); // author is auto-upvoted on creation
+		return id;
 	}
 	if (res.status !== 201) throw new Error(`createThesis failed: ${res.status} ${await res.text()}`);
-	return ((await res.json()) as { id: string }).id;
+	const id = ((await res.json()) as { id: string }).id;
+	markVoted(client, id); // author is auto-upvoted on creation
+	return id;
+}
+
+// Track which (client, thesis) pairs have already voted. A thesis vote is
+// required before contributing an argument (opinion-graph gate), but voting the
+// SAME type+weight twice retracts it — so each simulated user votes only once.
+// The thesis author is auto-upvoted on creation, so createThesis pre-seeds that.
+const votedPairs = new WeakMap<ApiClient, Set<string>>();
+
+function markVoted(client: ApiClient, thesis_id: string): void {
+	let set = votedPairs.get(client);
+	if (!set) {
+		set = new Set();
+		votedPairs.set(client, set);
+	}
+	set.add(thesis_id);
+}
+
+async function ensureThesisVote(client: ApiClient, thesis_id: string): Promise<void> {
+	if (votedPairs.get(client)?.has(thesis_id)) return;
+	await vote(client, thesis_id, 'support');
+	markVoted(client, thesis_id);
 }
 
 async function addArgument(client: ApiClient, thesis_id: string, content: string): Promise<string> {
+	// Adding an argument now requires a prior thesis vote (opinion-graph gate).
+	await ensureThesisVote(client, thesis_id);
 	const res = await client.post('/api/arguments', { thesis_id, content });
 	if (res.status === 429) {
 		// Rate-limit refill is 10/min shared per IP. Wait it out and retry once.
@@ -54,7 +81,11 @@ async function addArgument(client: ApiClient, thesis_id: string, content: string
 }
 
 async function vote(client: ApiClient, thesis_id: string, type: 'support' | 'reject' | 'neutral'): Promise<void> {
-	const res = await client.post(`/api/theses/${thesis_id}/vote`, { type, weight: 1 });
+	let res = await client.post(`/api/theses/${thesis_id}/vote`, { type, weight: 1 });
+	if (res.status === 429) {
+		await new Promise((r) => setTimeout(r, 7_000));
+		res = await client.post(`/api/theses/${thesis_id}/vote`, { type, weight: 1 });
+	}
 	if (!res.ok) throw new Error(`vote failed: ${res.status} ${await res.text()}`);
 }
 
@@ -106,8 +137,9 @@ describe('/api/reports/updates — self-actions filter (Bug 2 reproducer)', () =
 		const thesisId = await createThesis(alice, 'Lifecycle-Trigger sollte nicht als News auftauchen');
 
 		// Bob supports Alice's thesis (so lifecycle events on this thesis
-		// would normally show in Bob's feed).
-		await vote(bob, thesisId, 'support');
+		// would normally show in Bob's feed). Routed through ensureThesisVote so
+		// the later addArgument calls don't re-vote and retract it.
+		await ensureThesisVote(bob, thesisId);
 
 		// Bob himself triggers state-changing activity — arguments that will
 		// nudge the thesis lifecycle. In practice, the resulting lifecycle

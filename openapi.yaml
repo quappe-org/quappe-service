@@ -279,7 +279,10 @@ paths:
               schema: { type: array, items: { $ref: '#/components/schemas/Argument' } }
     post:
       tags: [arguments]
-      summary: Create an argument or fork variant (spends the daily argument budget)
+      summary: >
+        Create an argument or fork variant (spends the daily argument budget).
+        Requires a prior vote on the parent thesis (403 thesis_vote_required
+        otherwise) — same gate as voting on arguments.
       requestBody:
         required: true
         content:
@@ -289,6 +292,7 @@ paths:
         '201': { content: { application/json: { schema: { $ref: '#/components/schemas/Argument' } } } }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/LoginRequired' }
+        '403': { $ref: '#/components/responses/Forbidden' }
         '429': { $ref: '#/components/responses/RateLimited' }
 
   /api/arguments/{id}:

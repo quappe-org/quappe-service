@@ -1,6 +1,6 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { getArgumentsForThesis, createArgument, setArgumentEmbedding } from '$lib/stores/data';
+import { getArgumentsForThesis, createArgument, setArgumentEmbedding, hasUserVotedOnThesis } from '$lib/stores/data';
 import { deriveArgumentAttributes } from '$lib/utils/evidence';
 import { embed } from '$lib/server/embeddings';
 import { checkLength, checkRate, getClientIp } from '$lib/server/limits';
@@ -39,6 +39,16 @@ export const POST: RequestHandler = async ({ request, getClientAddress, locals }
 
 	const contentErr = checkLength('argument_content', content);
 	if (contentErr) return contentErr;
+
+	// Gate: you must have positioned yourself on the thesis before adding or
+	// forking an argument. Same rule as voting on arguments — it keeps the
+	// opinion graph complete (every contributor has a known thesis stance).
+	if (!hasUserVotedOnThesis(thesis_id, locals.user_id)) {
+		return json(
+			{ error: 'Position yourself on the thesis first — then you can add or fork arguments.', code: 'thesis_vote_required', thesis_id },
+			{ status: 403 }
+		);
+	}
 
 	// Server-side daily budget enforcement (single argument pool).
 	const budgetErr = checkArgumentBudget(locals.user_id);
