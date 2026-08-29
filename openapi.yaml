@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Quappe Service API
-  version: 0.5.1
+  version: 0.5.2
   description: >
     The Quappe API — theses, arguments, votes, and derived reports. Single
     source of truth for all clients (web, future CLI/app/analytics). Identity is
@@ -282,7 +282,10 @@ paths:
       summary: >
         Create an argument or fork variant (spends the daily argument budget).
         Requires a prior vote on the parent thesis (403 thesis_vote_required
-        otherwise) — same gate as voting on arguments.
+        otherwise) — same gate as voting on arguments. A fork must keep the
+        parent's text verbatim and extend it (add substantive content beyond
+        the original); a fork that only echoes or trivially tweaks the parent
+        is rejected with 400.
       requestBody:
         required: true
         content:

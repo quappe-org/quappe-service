@@ -29,6 +29,7 @@ Fields:
 
 Notes:
 - No parent-child reply chains. **Fork = create a new argument variant based on an existing one**. Both coexist as one *argument group* (root + variants). Forks no longer carry a stance either.
+- **Fork guard (server-enforced):** a fork must keep the parent's text verbatim as a prefix AND extend it with substantive new content — a fork that only echoes or trivially tweaks the parent is rejected with `400`. This makes forking an *argumentative* act (build on, don't rephrase). Validated in `data.ts`; covered by `tests/api/arguments.test.ts`. Also requires a prior vote on the parent thesis (`403 thesis_vote_required`).
 - Arguments render as ONE list sorted by approval (weighted support), not two pro/con columns. An argument group renders as ONE card: the leading variant (most support) is shown; the card expands into a radio-list picker (sorted Top / Latest, capped by the complexity slider, "+N more" hint for the rest). A user has ONE vote per group — voting a variant retracts their vote on siblings (enforced server-side in `voteOnArgument` via the fork-family walk).
 - Forking migrates the author's vote to the new variant automatically.
 - Arguments per Thesis are limited by the complexity slider (Fibonacci: 1 to 8).

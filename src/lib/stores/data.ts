@@ -734,6 +734,21 @@ export function createArgument(
 		const source = dbGetArgumentById(forked_from_id);
 		if (!source) return { error: 'Source argument not found' };
 		if (source.thesis_id !== thesis_id) return { error: 'Fork source must be from same thesis' };
+		// A fork is an *argumentative extension*: it keeps the original verbatim
+		// and adds substance on top. Enforce that here so no client (web, CLI,
+		// bridge) can create a fork that merely echoes — or trivially tweaks —
+		// its parent. Whitespace is normalized so cosmetic differences (an extra
+		// space, a trailing newline) never count as new content.
+		const norm = (s: string) => s.trim().replace(/\s+/g, ' ');
+		const parentNorm = norm(source.content);
+		const forkNorm = norm(content);
+		if (!forkNorm.startsWith(parentNorm)) {
+			return { error: 'A fork must keep the original argument and extend it — the original text may not be altered.' };
+		}
+		const additionNorm = forkNorm.slice(parentNorm.length).trim();
+		if (additionNorm.length === 0) {
+			return { error: 'A fork must add something to the original — write your extension below the original.' };
+		}
 	}
 
 	const created = nowIso();
