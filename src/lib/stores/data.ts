@@ -903,6 +903,19 @@ export function getUserThesisPosition(thesis_id: string, user_id: string): strin
 	return v ? v.type : null;
 }
 
+// Extra weight (weight − 1) a user has already committed on a given target.
+// Used by the vote endpoints so a re-weight reclaims what it already spent
+// instead of being charged the full new weight again (double-charge).
+export function getUserVoteExtraWeight(
+	target_type: 'thesis' | 'argument',
+	target_id: string,
+	user_id: string
+): number {
+	const v = dbGetUserVoteOn(target_type, target_id, user_id);
+	if (!v || (v.type !== 'support' && v.type !== 'reject')) return 0;
+	return Math.max(0, (v.weight ?? 1) - 1);
+}
+
 export function deleteArgument(id: string): boolean {
 	const arg = dbGetArgumentById(id);
 	if (!arg) return false;

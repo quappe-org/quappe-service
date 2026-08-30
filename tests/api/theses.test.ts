@@ -62,3 +62,30 @@ describe('theses CRUD (happy path)', () => {
 		expect(res.status).toBe(400);
 	});
 });
+
+describe('thesis vote weighting', () => {
+	it('accepts a free base vote but Sybil-blocks a weighted vote from a fresh identity', async () => {
+		const client = apiClient(server.baseURL);
+		await client.loginAs('member', { member: memberSecret, admin: adminSecret });
+
+		const createRes = await client.post('/api/theses', {
+			title: 'Gewichtete Stimmen kosten aus dem Tagesbudget',
+			description: 'Basis-Stimmen sind frei; Zusatzgewicht wird bezahlt.',
+			categories: ['economy']
+		});
+		expect(createRes.status).toBe(201);
+		const { id } = (await createRes.json()) as { id: string };
+
+		// Base weight-1 vote is always free and always allowed.
+		const base = await client.post(`/api/theses/${id}/vote`, { type: 'support', weight: 1 });
+		expect(base.status).toBe(200);
+
+		// A weighted vote from a brand-new identity is blocked by the Sybil
+		// dampener (identity younger than the 1-minute maturity window). This is
+		// the gate the /my weight-swipe surfaces to the user as a notice.
+		const weighted = await client.post(`/api/theses/${id}/vote`, { type: 'support', weight: 2 });
+		expect(weighted.status).toBe(429);
+		const body = (await weighted.json()) as { error?: string };
+		expect(body.error ?? '').toMatch(/new identit/i);
+	});
+});

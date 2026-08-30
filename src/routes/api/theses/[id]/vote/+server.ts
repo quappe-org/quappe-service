@@ -1,6 +1,6 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { voteOnThesis, computeVoteSummary } from '$lib/stores/data';
+import { voteOnThesis, computeVoteSummary, getUserVoteExtraWeight } from '$lib/stores/data';
 import { checkRate, getClientIp } from '$lib/server/limits';
 import { normalizeVoteWeight } from '$lib/models/fibonacci';
 import { checkWeightBudget, checkIdentityMaturityForWeight } from '$lib/server/budget';
@@ -23,7 +23,7 @@ export const POST: RequestHandler = async ({ params, request, getClientAddress, 
 	if (type === 'support' || type === 'reject') {
 		const maturityErr = checkIdentityMaturityForWeight(cookies, w);
 		if (maturityErr) return maturityErr;
-		const budgetErr = checkWeightBudget(user_id, w);
+		const budgetErr = checkWeightBudget(user_id, w, getUserVoteExtraWeight('thesis', params.id, user_id));
 		if (budgetErr) return budgetErr;
 	}
 	const thesis = voteOnThesis(params.id, user_id, type, w);
