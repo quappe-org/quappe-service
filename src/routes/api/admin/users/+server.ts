@@ -3,8 +3,8 @@ import type { RequestHandler } from './$types';
 import { dbCountDistinctVoters, dbDailyVoterStats } from '$lib/server/db/votes';
 import { requireAdmin } from '$lib/server/admin-auth';
 
-export const GET: RequestHandler = async ({ url, request, cookies }) => {
-	const denied = requireAdmin(request, cookies);
+export const GET: RequestHandler = async ({ url, request, cookies, getClientAddress }) => {
+	const denied = requireAdmin(request, cookies, getClientAddress());
 	if (denied) return denied;
 
 	const days = Math.min(365, Math.max(1, Number(url.searchParams.get('days') ?? 30)));

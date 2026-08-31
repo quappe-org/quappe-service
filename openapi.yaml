@@ -143,6 +143,8 @@ paths:
       responses:
         '200': { $ref: '#/components/responses/Ok' }
         '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
 
   /api/theses/{id}/related:
     parameters:
@@ -490,8 +492,9 @@ paths:
                   ok: { type: boolean }
                   role: { type: string, enum: [admin, member] }
         '400': { $ref: '#/components/responses/BadRequest' }
-        '401': { description: Invalid secret }
+        '401': { description: Invalid secret (`code: invalid_secret`), content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
         '403': { description: Login disabled (anonymous mode) }
+        '429': { $ref: '#/components/responses/RateLimited' }
 
   /api/auth/logout:
     post:
@@ -540,6 +543,7 @@ paths:
         '200': { $ref: '#/components/responses/Ok' }
         '401': { $ref: '#/components/responses/LoginRequired' }
         '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/RateLimited' }
 
   /api/admin/logs:
     get:
@@ -553,6 +557,7 @@ paths:
       responses:
         '200': { $ref: '#/components/responses/Ok' }
         '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/RateLimited' }
     delete:
       tags: [admin]
       summary: Clear the log buffer (admin)
@@ -560,6 +565,7 @@ paths:
         '200': { $ref: '#/components/responses/Ok' }
         '401': { $ref: '#/components/responses/LoginRequired' }
         '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/RateLimited' }
 
   /api/admin/users:
     get:
@@ -583,6 +589,7 @@ paths:
                         date: { type: string }
                         voters: { type: integer }
         '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/RateLimited' }
 
   /api/admin/reset:
     post:
@@ -607,6 +614,7 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/LoginRequired' }
         '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/RateLimited' }
 
   /api/metrics:
     get:

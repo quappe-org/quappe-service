@@ -8,7 +8,7 @@ import { logger } from '$lib/stores/logger';
 //   POST { keep_settings?: boolean }  → wipes theses/arguments/votes/etc.
 // Requires a confirmation header to avoid accidental fires.
 export const POST: RequestHandler = async ({ request, cookies, getClientAddress }) => {
-	const denied = requireAdmin(request, cookies);
+	const denied = requireAdmin(request, cookies, getClientAddress());
 	if (denied) return denied;
 
 	// Extra safety: an explicit confirm header, so a stray call can't wipe.

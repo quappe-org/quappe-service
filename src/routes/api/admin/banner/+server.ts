@@ -19,8 +19,8 @@ export const GET: RequestHandler = async () => {
 };
 
 // PUT requires admin — setting/clearing the site-wide banner is an operator action.
-export const PUT: RequestHandler = async ({ request, cookies }) => {
-	const denied = requireAdmin(request, cookies);
+export const PUT: RequestHandler = async ({ request, cookies, getClientAddress }) => {
+	const denied = requireAdmin(request, cookies, getClientAddress());
 	if (denied) return denied;
 
 	const { text } = await request.json();

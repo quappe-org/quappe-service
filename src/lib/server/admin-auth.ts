@@ -2,6 +2,7 @@ import { json } from '@sveltejs/kit';
 import type { Cookies } from '@sveltejs/kit';
 import { readRole } from './identity';
 import { adminSecretValue } from './auth-config';
+import { checkAuthRate } from './limits';
 
 // Admin authorization. Two acceptance paths:
 //
@@ -24,8 +25,19 @@ export function isAdmin(request: Request, cookies?: Cookies): boolean {
 	return false;
 }
 
-/** Guard helper: returns a 403 Response if not admin, else null. */
-export function requireAdmin(request: Request, cookies?: Cookies): Response | null {
+/** Guard helper: returns a 403 Response if not admin, else null.
+ *
+ * Pass `ip` to throttle *failed* checks: a rejected request draws a token from
+ * the strict `auth` bucket and, once exhausted, gets a 429 instead of a 403 —
+ * this brute-force-hardens the `x-admin-secret` header. A successful check never
+ * draws a token, so a legitimate admin (e.g. the /api/admin/logs 2s poll) is
+ * never throttled. Omit `ip` to keep the old un-throttled behaviour. */
+export function requireAdmin(request: Request, cookies?: Cookies, ip?: string): Response | null {
 	if (isAdmin(request, cookies)) return null;
-	return json({ error: 'Admin access required' }, { status: 403 });
+	if (ip) {
+		const limited = checkAuthRate(ip, null);
+		if (limited) return limited;
+	}
+	return json({ error: 'Admin access required', code: 'admin_required' }, { status: 403 });
 }
+

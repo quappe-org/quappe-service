@@ -3,8 +3,8 @@ import type { RequestHandler } from './$types';
 import { archiveThesis } from '$lib/stores/data';
 import { requireAdmin } from '$lib/server/admin-auth';
 
-export const POST: RequestHandler = async ({ params, request, cookies }) => {
-	const denied = requireAdmin(request, cookies);
+export const POST: RequestHandler = async ({ params, request, cookies, getClientAddress }) => {
+	const denied = requireAdmin(request, cookies, getClientAddress());
 	if (denied) return denied;
 
 	const body = await request.json().catch(() => ({}));

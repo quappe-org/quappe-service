@@ -128,7 +128,11 @@ function take(key: string, policy: Policy): boolean {
 const POLICIES: Record<string, Policy> = {
 	write_heavy: { capacity: 10, refillPerSec: 10 / 60 }, // 10 burst, ~10/min sustained
 	write_light: { capacity: 30, refillPerSec: 30 / 60 }, // 30 burst, ~30/min sustained
-	read: { capacity: 60, refillPerSec: 60 / 60 } // 60 burst, ~60/min sustained
+	read: { capacity: 60, refillPerSec: 60 / 60 }, // 60 burst, ~60/min sustained
+	// Auth is deliberately strict: this bucket only ever sees *failed* secret
+	// attempts (successful auth never draws a token — see checkAuthRate callers),
+	// so a legitimate user costs nothing while a brute-forcer is blocked after 3.
+	auth: { capacity: 3, refillPerSec: 3 / 60 } // 3 burst, ~3/min sustained
 };
 
 export type RateClass = keyof typeof POLICIES;
@@ -182,7 +186,45 @@ export function checkRate(
 	return null;
 }
 
-/** Client IP from a request event.
+/**
+ * Rate-limit a *failed* auth attempt (wrong/missing secret). Call this ONLY on
+ * the failure path — a successful login or a valid admin-header request must not
+ * draw a token, otherwise a legitimate admin polling /api/admin/logs every 2s
+ * would lock itself out. Because only failures land here, brute-force (which is
+ * by definition a stream of failures) is throttled after `auth.capacity` tries.
+ *
+ * IP is the primary key (login happens pre-identity); user_id is checked too
+ * when present so a single cookie can't rotate IPs to bypass the cap.
+ * Returns a 429 Response when the bucket is empty, else null.
+ */
+export function checkAuthRate(ip: string, user_id: string | null): Response | null {
+	const policy = POLICIES.auth;
+
+	if (user_id) {
+		if (!take(`auth:u:${user_id}`, policy)) {
+			logger.warn('ratelimit', 'auth bucket exhausted', { dimension: 'user', user_id });
+			incCounter('quappe_ratelimit_denials_total', 'Rate-limit rejections', { klass: 'auth', dimension: 'user' });
+			return json(
+				{ error: 'Too many attempts. Slow down.', code: 'rate_limited' },
+				{ status: 429, headers: { 'Retry-After': '60' } }
+			);
+		}
+	}
+
+	if (!take(`auth:ip:${ip}`, policy)) {
+		logger.warn('ratelimit', 'auth bucket exhausted', { dimension: 'ip', ip });
+		incCounter('quappe_ratelimit_denials_total', 'Rate-limit rejections', { klass: 'auth', dimension: 'ip' });
+		return json(
+			{ error: 'Too many attempts. Slow down.', code: 'rate_limited' },
+			{ status: 429, headers: { 'Retry-After': '60' } }
+		);
+	}
+
+	return null;
+}
+
+/**
+ * Resolve the client IP for rate-limit keying.
  *
  * In k8s, `X-Forwarded-For` is trivially spoofable by the client unless the
  * ingress strips/overwrites it. We therefore prefer `clientAddress` (set by the
