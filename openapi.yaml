@@ -628,6 +628,35 @@ paths:
             text/plain:
               schema: { type: string }
 
+  /api/events:
+    get:
+      tags: [observability]
+      summary: >
+        Durable event/history feed (append-only), cursor-paged. The thin
+        read surface a tier-2 analytics consumer pulls from. Admin-gated.
+        STUB in A0 — returns an empty page until emission (A1) + query (A2)
+        land; history starts at that deploy (no back-fill of past activity).
+      parameters:
+        - { name: since, in: query, description: 'Cursor — the last event id already seen (0 = from start)', schema: { type: integer, default: 0, minimum: 0 } }
+        - { name: limit, in: query, schema: { type: integer, default: 500, minimum: 1, maximum: 1000 } }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  events:
+                    type: array
+                    items: { $ref: '#/components/schemas/Event' }
+                  next_cursor:
+                    description: 'Pass as ?since= to resume; null when caught up.'
+                    oneOf:
+                      - { type: integer }
+                      - { type: 'null' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
   /api/import/theses:
     post:
       tags: [import]
@@ -752,6 +781,34 @@ components:
     EvidenceType: { type: string, enum: [study, authority, logical, experiential] }
     LifecycleState: { type: string, enum: [seedling, discussed, contested, crystallized, faded, dormant] }
     UpdateKind: { type: string, enum: [fork, new_argument, lifecycle] }
+
+    EventType:
+      type: string
+      description: >
+        The minimal starting set of durable event types (A0). Extend
+        deliberately — adding a type is a contract change.
+      enum: [thesis.created, vote.cast, lifecycle.changed, thesis.archived, import.batch]
+
+    Event:
+      type: object
+      description: >
+        One append-only history record. Immutable once written. `id` is the
+        monotonic paging cursor; `ts` is for human display/ordering.
+      required: [id, ts, type, subject_id]
+      properties:
+        id: { type: integer, description: 'Monotonic cursor (pass back as ?since=).' }
+        ts: { type: string, format: date-time, description: 'ISO-8601; display/ordering, not the cursor.' }
+        type: { $ref: '#/components/schemas/EventType' }
+        subject_id: { type: string, description: 'The thesis/argument/batch the event is about.' }
+        actor_id:
+          description: 'Who caused it (voter, author, or system:bridge). Absent for system-derived events like lifecycle.changed.'
+          oneOf:
+            - { type: string }
+            - { type: 'null' }
+        payload:
+          type: object
+          additionalProperties: true
+          description: 'Type-specific detail, e.g. {from,to} for lifecycle.changed, {weight,type} for vote.cast.'
 
     Vote:
       type: object
