@@ -9,6 +9,7 @@ export interface RunningServer {
 	stop: () => Promise<void>;
 	dbPath: string;
 	adminSecret: string;
+	importSecret: string;
 }
 
 async function pickPort(): Promise<number> {
@@ -56,10 +57,12 @@ export async function startServer(): Promise<RunningServer> {
 	}
 
 	const adminSecret = 'test-admin-secret';
+	const importSecret = 'test-import-secret';
 	const env: NodeJS.ProcessEnv = {
 		...process.env,
 		QUAPPE_DB_PATH: dbPath,
 		QUAPPE_ADMIN_SECRET: adminSecret,
+		QUAPPE_IMPORT_SECRET: importSecret,
 		QUAPPE_SECRET: 'test-jwt-secret-min-16-chars-long',
 		// `gated` avoids the dev-seeder firing on the first request — tests want a clean DB.
 		AUTH_MODE: 'gated',
@@ -92,6 +95,7 @@ export async function startServer(): Promise<RunningServer> {
 		baseURL,
 		dbPath,
 		adminSecret,
+		importSecret,
 		async stop() {
 			await new Promise<void>((resolve) => {
 				if (child.exitCode !== null) return resolve();

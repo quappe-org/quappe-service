@@ -74,6 +74,7 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/LoginRequired' }
         '413': { $ref: '#/components/responses/TooLarge' }
+        '422': { $ref: '#/components/responses/RegisterDrift' }
         '429': { $ref: '#/components/responses/RateLimited' }
 
   /api/theses/{id}:
@@ -99,6 +100,7 @@ paths:
         '200': { content: { application/json: { schema: { $ref: '#/components/schemas/Thesis' } } } }
         '401': { $ref: '#/components/responses/LoginRequired' }
         '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/RegisterDrift' }
     delete:
       tags: [theses]
       summary: Delete a thesis (author only)
@@ -218,6 +220,74 @@ paths:
                             reject: { type: integer }
                             neutral: { type: integer }
 
+  /api/theses/{id}/edges:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      tags: [theses]
+      summary: >
+        Theses linked "as an argument" onto this thesis, each hydrated with its
+        source thesis and its companion argument (which carries the vote_summary
+        for the linked-thesis tile). Stanceless links — direction lives in the
+        author's vote.
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  edges:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        edge: { $ref: '#/components/schemas/ThesisEdge' }
+                        thesis: { $ref: '#/components/schemas/Thesis' }
+                        argument: { $ref: '#/components/schemas/Argument' }
+        '404': { description: Thesis not found }
+    post:
+      tags: [theses]
+      summary: >
+        Link one of your theses onto this thesis as an argument. Requires a prior
+        vote on this thesis (vote-first gate). The link carries no stance.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [source_thesis_id]
+              properties:
+                source_thesis_id: { type: string, format: uuid }
+      responses:
+        '201':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ThesisEdge' }
+        '400': { description: Missing source_thesis_id, self-link, or source thesis not found (code self_link / source_missing) }
+        '403': { description: Must vote on the thesis first (code thesis_vote_required) }
+        '404': { description: Target thesis not found }
+        '409': { description: This thesis is already linked here (code edge_exists) }
+
+  /api/theses/{id}/edges/{edgeId}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: edgeId, in: path, required: true, schema: { type: string, format: uuid } }
+    delete:
+      tags: [theses]
+      summary: Remove a thesis-as-argument link (author only).
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+        '403': { description: Only the author can remove this link (code not_edge_author) }
+        '404': { description: Edge not found }
+
   /api/theses/draft-variant:
     post:
       tags: [theses]
@@ -242,6 +312,16 @@ paths:
                 properties:
                   description: { type: string }
                   variant: { type: string }
+                  drift:
+                    type: object
+                    description: >
+                      Advisory similarity of the drafted variant to the prose
+                      description. `ok:false` means it drifted below the
+                      configured threshold; persisting it via POST/PUT would 422.
+                    properties:
+                      score: { type: number }
+                      ok: { type: boolean }
+                      threshold: { type: number }
         '503': { description: LLM unavailable }
 
   /api/theses/similar:
@@ -380,6 +460,19 @@ paths:
                   heat: { type: object, additionalProperties: { type: number } }
                   arguments: { type: object, additionalProperties: { type: integer } }
 
+  /api/categories:
+    get:
+      tags: [meta]
+      summary: Distinct categories present across all theses (feed filter axis)
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  categories: { type: array, items: { type: string } }
+
   /api/heat:
     get:
       tags: [meta]
@@ -428,6 +521,15 @@ paths:
     get:
       tags: [reports]
       summary: Personal activity report (LLM-flavoured)
+      parameters:
+        - name: register
+          in: query
+          required: false
+          schema: { type: integer }
+          description: >
+            Reader's amount-slider value (max_arguments). The server snaps it to
+            a FIB_ARGUMENTS notch and maps it to a 0-4 density step that drives
+            the generated text's length. Omitted/invalid → fullest register.
       responses:
         '200': { $ref: '#/components/responses/Ok' }
 
@@ -435,6 +537,15 @@ paths:
     get:
       tags: [reports]
       summary: Community pulse (LLM summary + stats, 24h-cached)
+      parameters:
+        - name: register
+          in: query
+          required: false
+          schema: { type: integer }
+          description: >
+            Reader's amount-slider value (max_arguments). The server snaps it to
+            a FIB_ARGUMENTS notch and maps it to a 0-4 density step; each variant
+            is pre-computed per locale. Omitted/invalid → fullest register.
       responses:
         '200': { content: { application/json: { schema: { $ref: '#/components/schemas/PulseBody' } } } }
 
@@ -769,6 +880,18 @@ components:
     NotFound: { description: Resource not found, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
     TooLarge: { description: Field or request body exceeds length cap }
     RateLimited: { description: Rate limit or daily budget exhausted, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    RegisterDrift:
+      description: >
+        A submitted reading-register variant (description_simple / description_dense)
+        drifted too far in meaning from the prose description. Response body carries
+        `drift_score` alongside the error.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error: { type: string }
+              drift_score: { type: number }
 
   schemas:
     Error:
@@ -871,6 +994,18 @@ components:
         external_ref: { type: string, nullable: true, description: 'Set for bridge-imported theses' }
         meta: { $ref: '#/components/schemas/Meta' }
 
+    ThesisEdge:
+      type: object
+      description: >
+        A user-authored directed link: source thesis shown "as an argument" on
+        the target thesis. Stanceless — never counts toward votes.
+      properties:
+        id: { type: string, format: uuid }
+        source_thesis_id: { type: string, format: uuid }
+        target_thesis_id: { type: string, format: uuid }
+        author_id: { type: string }
+        created_at: { type: string, format: date-time }
+
     ThesisCreate:
       type: object
       required: [title, description, categories]
@@ -888,6 +1023,8 @@ components:
         title: { type: string, maxLength: 200 }
         description: { type: string, maxLength: 2000 }
         categories: { type: array, items: { type: string } }
+        description_simple: { type: string, maxLength: 2000, nullable: true }
+        description_dense: { type: string, maxLength: 2000, nullable: true }
 
     Argument:
       type: object
@@ -898,6 +1035,14 @@ components:
         attributes: { type: array, items: { $ref: '#/components/schemas/ArgumentAttribute' } }
         votes: { type: array, items: { $ref: '#/components/schemas/Vote' } }
         forked_from_id: { type: string, format: uuid, nullable: true }
+        linked_thesis_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: >
+            If set, this argument IS a thesis linked "as an argument" (companion
+            row for a thesis_edge). content is empty; display text is the linked
+            thesis title.
         categories: { type: array, items: { type: string }, nullable: true }
         hashtags: { type: array, items: { type: string }, nullable: true }
         meta: { $ref: '#/components/schemas/Meta' }

@@ -19,6 +19,21 @@ export const FIB_RELATED: readonly number[] = [3, 5, 8, 13];
 // growth), which naturally dampens weight-stacking abuse.
 export const FIB_WEIGHTS: readonly number[] = [1, 2, 3, 5, 8];
 
+// Map a raw slider max_arguments value to a 0..4 register step (one per
+// FIB_ARGUMENTS notch). Snap-then-index so any legal ladder value maps cleanly
+// and out-of-range/invalid inputs clamp to the fullest step. Used server-side to
+// drive LLM-report density from the reader's amount slider — the client only
+// forwards the raw slider value (server-agnostic: no register logic on the client).
+export function registerStep(maxArguments: unknown): number {
+	const last = FIB_ARGUMENTS.length - 1;
+	const n =
+		typeof maxArguments === 'number' && Number.isFinite(maxArguments)
+			? Math.floor(maxArguments)
+			: FIB_ARGUMENTS[last];
+	const idx = FIB_ARGUMENTS.indexOf(snapToFib(n, FIB_ARGUMENTS));
+	return idx === -1 ? last : idx; // default = fullest register
+}
+
 // Snap an arbitrary number to the nearest Fibonacci value in a given ladder.
 export function snapToFib(value: number, ladder: readonly number[] = FIB): number {
 	if (ladder.length === 0) return value;

@@ -21,6 +21,20 @@ export function dbGetArgumentById(id: string): Argument | undefined {
 	return rowToArgument(row, votes);
 }
 
+// The companion argument row for a linked thesis (B linked "as an argument"
+// onto A). One per (target A, source B) — created alongside the thesis_edge.
+export function dbGetArgumentByLinkedThesis(
+	thesis_id: string,
+	linked_thesis_id: string
+): Argument | undefined {
+	const row = prepare<ArgumentRow>(
+		`SELECT * FROM arguments WHERE thesis_id = ? AND linked_thesis_id = ?`
+	).get(thesis_id, linked_thesis_id) as ArgumentRow | undefined;
+	if (!row) return undefined;
+	const votes = dbGetVotesForTarget('argument', row.id);
+	return rowToArgument(row, votes);
+}
+
 export function dbGetArgumentsForThesis(thesis_id: string): Argument[] {
 	const rows = prepare<ArgumentRow>(`SELECT * FROM arguments WHERE thesis_id = ?`).all(
 		thesis_id
@@ -71,10 +85,10 @@ export function dbInsertArgument(a: Argument): void {
 	prepare(
 		`INSERT INTO arguments
 		   (id, thesis_id, content, attributes_json, categories_json, hashtags_json, forked_from_id,
-		    created_at, updated_at, author_id, location)
+		    linked_thesis_id, created_at, updated_at, author_id, location)
 		 VALUES
 		   (@id, @thesis_id, @content, @attributes_json, @categories_json, @hashtags_json, @forked_from_id,
-		    @created_at, @updated_at, @author_id, @location)`
+		    @linked_thesis_id, @created_at, @updated_at, @author_id, @location)`
 	).run(argumentInsertParams(a));
 }
 
@@ -144,10 +158,10 @@ export function dbInsertArgumentsBulk(args: Argument[]): void {
 	const stmt = prepare(
 		`INSERT INTO arguments
 		   (id, thesis_id, content, attributes_json, categories_json, hashtags_json, forked_from_id,
-		    created_at, updated_at, author_id, location)
+		    linked_thesis_id, created_at, updated_at, author_id, location)
 		 VALUES
 		   (@id, @thesis_id, @content, @attributes_json, @categories_json, @hashtags_json, @forked_from_id,
-		    @created_at, @updated_at, @author_id, @location)`
+		    @linked_thesis_id, @created_at, @updated_at, @author_id, @location)`
 	);
 	for (const a of args) stmt.run(argumentInsertParams(a));
 }

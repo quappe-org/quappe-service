@@ -76,6 +76,11 @@ export interface Argument {
 	attributes: ArgumentAttribute[];
 	votes: Vote[];
 	forked_from_id?: string; // argument this was forked from (parallel evolution)
+	// If set, this argument IS a thesis linked "as an argument" (companion row
+	// for a thesis_edge B→A). `content` is empty — the display text comes from
+	// the linked thesis title. Lets a linked thesis be voted on via the normal
+	// argument vote path, without duplicating the thesis prose.
+	linked_thesis_id?: string;
 	// Optional — user-authored arguments start with `undefined`. A nightly
 	// backend LLM batch job assigns categories asynchronously. Never inherited
 	// from the parent thesis.
@@ -106,6 +111,18 @@ export interface Thesis {
 	// idempotent upsert + selective purge without touching user-authored theses.
 	external_ref?: string;
 	meta: Meta;
+}
+
+// A user-authored directed link: source thesis appears "as an argument" on the
+// target thesis. Stanceless by design — the pro/con/neutral meaning comes from
+// the author's own vote on the target thesis, never from the edge. Deliberately
+// NOT a field on Thesis and NOT a vote, so it can never feed vote scoring.
+export interface ThesisEdge {
+	id: string;
+	source_thesis_id: string; // the linked thesis (shown as the argument)
+	target_thesis_id: string; // the thesis it's linked onto
+	author_id: string;
+	created_at: string;
 }
 
 // API request/response types

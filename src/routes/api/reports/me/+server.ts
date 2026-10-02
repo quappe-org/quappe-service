@@ -8,6 +8,41 @@ import {
 } from '$lib/stores/data';
 import { generate } from '$lib/server/llm';
 import { baseLocale, type Locale } from '$lib/paraglide/runtime';
+import { registerStep } from '$lib/models/fibonacci';
+
+// Per-locale density directives, one per register step (0 = terse … 4 = full).
+// Appended to the report prompt so the reader's amount slider drives text length.
+// The server owns this mapping entirely — the client only forwards the raw value.
+const DENSITY: Record<Locale, string[]> = {
+	en: [
+		'Write ONE sentence only. Telegraphic, no connective prose.',
+		'Write 2 short sentences. Bare essentials only.',
+		'Write 3 short paragraphs, 1 sentence each.',
+		'Write 3 paragraphs, 1-2 sentences each.',
+		'Write 3 full paragraphs, up to ~220 words total, with brief reasoning.'
+	],
+	de: [
+		'Schreibe NUR einen Satz. Telegrammstil, keine verbindende Prosa.',
+		'Schreibe 2 kurze Sätze. Nur das Wesentliche.',
+		'Schreibe 3 kurze Absätze, je 1 Satz.',
+		'Schreibe 3 Absätze, je 1-2 Sätze.',
+		'Schreibe 3 volle Absätze, insgesamt bis ca. 220 Wörter, mit kurzer Begründung.'
+	],
+	fr: [
+		'Écris UNE seule phrase. Style télégraphique, sans prose de liaison.',
+		'Écris 2 phrases courtes. Uniquement l’essentiel.',
+		'Écris 3 courts paragraphes, 1 phrase chacun.',
+		'Écris 3 paragraphes, 1 à 2 phrases chacun.',
+		'Écris 3 paragraphes complets, jusqu’à ~220 mots au total, avec un bref raisonnement.'
+	],
+	es: [
+		'Escribe UNA sola frase. Estilo telegráfico, sin prosa de enlace.',
+		'Escribe 2 frases cortas. Solo lo esencial.',
+		'Escribe 3 párrafos cortos, 1 frase cada uno.',
+		'Escribe 3 párrafos, 1 o 2 frases cada uno.',
+		'Escribe 3 párrafos completos, hasta ~220 palabras en total, con un breve razonamiento.'
+	]
+};
 
 // In-memory cache: 6h TTL, keyed by `${user_id}::${locale}`.
 interface CachedReport {
@@ -92,7 +127,7 @@ interface StandpointCopy {
 	empty: string;
 	unknownThesis: string;
 	noOwnArgs: string;
-	buildPrompt: (stats: UserStats) => string;
+	buildPrompt: (stats: UserStats, step: number) => string;
 }
 
 const STANDPOINT_COPY: Record<Locale, StandpointCopy> = {
@@ -103,7 +138,7 @@ const STANDPOINT_COPY: Record<Locale, StandpointCopy> = {
 			'No activity yet — as soon as you create theses, argue or vote, your reflection report will appear here.',
 		unknownThesis: '(unknown thesis)',
 		noOwnArgs: '  (no own arguments yet)',
-		buildPrompt(stats) {
+		buildPrompt(stats, step) {
 			const cats = stats.dominant_categories.map((c) => `${c.name} (${c.count})`).join(', ') || '—';
 			const sample = stats.sample_own_arguments.length
 				? stats.sample_own_arguments
@@ -124,15 +159,13 @@ Use these facts:
 - Total theses engaged with: ${stats.engaged_theses}
 - Most frequent topics: ${cats}
 
-Examples of their own arguments:
+Examples of their own arguments (newest first — give more weight to the most recent items):
 ${sample}
 
-Write 3 paragraphs:
-1. "Your topics" — which fields dominate, what connects them thematically.
-2. "How you argue" — pro/con balance, whether nuanced or one-sided, whether patterns emerge. Use phrasing like "often", "tends to", "frequently" instead of hard verdicts.
-3. "Widening the view" — a concrete, friendly suggestion for which perspective/category to look at next.
+Cover, in this order: (1) their topics and what connects them, (2) how they argue — pro/con balance, nuanced vs. one-sided, patterns — using phrasing like "often"/"tends to" instead of hard verdicts, (3) a concrete, friendly suggestion for which perspective/category to look at next.
 
-Maximum 220 words total. No title, no headings — just the three paragraphs.`;
+Do not repeat the raw numbers above. No title, no headings.
+${DENSITY.en[step]}`;
 		}
 	},
 	de: {
@@ -142,7 +175,7 @@ Maximum 220 words total. No title, no headings — just the three paragraphs.`;
 			'Noch keine Aktivität — sobald du Thesen erstellst, argumentierst oder abstimmst, gibt es hier deinen Reflexions-Report.',
 		unknownThesis: '(unbekannte These)',
 		noOwnArgs: '  (keine eigenen Argumente vorhanden)',
-		buildPrompt(stats) {
+		buildPrompt(stats, step) {
 			const cats = stats.dominant_categories.map((c) => `${c.name} (${c.count})`).join(', ') || '—';
 			const sample = stats.sample_own_arguments.length
 				? stats.sample_own_arguments
@@ -163,15 +196,13 @@ Nutze diese Fakten:
 - Beteiligte Thesen insgesamt: ${stats.engaged_theses}
 - Häufigste Themenfelder: ${cats}
 
-Beispiele seiner eigenen Argumente:
+Beispiele seiner eigenen Argumente (neueste zuerst — gewichte die jüngsten Einträge stärker):
 ${sample}
 
-Schreibe 3 Absätze:
-1. "Deine Themen" — welche Felder dominieren, was verbindet sie inhaltlich.
-2. "Deine Art zu argumentieren" — pro/contra-Balance, ob differenziert oder einseitig, ob Muster erkennbar. Nutze Formulierungen wie "häufig", "eher", "oft" statt harter Urteile.
-3. "Blickfeld erweitern" — konkreter, freundlicher Vorschlag welche Perspektive/Kategorie er als nächstes anschauen könnte.
+Behandle in dieser Reihenfolge: (1) seine Themen und was sie verbindet, (2) seine Art zu argumentieren — pro/contra-Balance, differenziert vs. einseitig, Muster — mit Formulierungen wie "häufig"/"eher" statt harter Urteile, (3) ein konkreter, freundlicher Vorschlag, welche Perspektive/Kategorie er als nächstes anschauen könnte.
 
-Maximum 220 Wörter insgesamt. Kein Titel, keine Überschriften — nur die drei Absätze.`;
+Wiederhole die obigen Zahlen nicht. Kein Titel, keine Überschriften.
+${DENSITY.de[step]}`;
 		}
 	},
 	fr: {
@@ -181,7 +212,7 @@ Maximum 220 Wörter insgesamt. Kein Titel, keine Überschriften — nur die drei
 			"Pas encore d'activité — dès que tu crées des thèses, argumentes ou votes, ton rapport de réflexion apparaîtra ici.",
 		unknownThesis: '(thèse inconnue)',
 		noOwnArgs: '  (pas encore d\'arguments propres)',
-		buildPrompt(stats) {
+		buildPrompt(stats, step) {
 			const cats = stats.dominant_categories.map((c) => `${c.name} (${c.count})`).join(', ') || '—';
 			const sample = stats.sample_own_arguments.length
 				? stats.sample_own_arguments
@@ -202,15 +233,13 @@ Utilise ces faits :
 - Total de thèses concernées : ${stats.engaged_theses}
 - Thématiques les plus fréquentes : ${cats}
 
-Exemples de ses propres arguments :
+Exemples de ses propres arguments (les plus récents en premier — accorde plus de poids aux éléments récents) :
 ${sample}
 
-Écris 3 paragraphes :
-1. « Tes thématiques » — quels domaines dominent, ce qui les relie sur le fond.
-2. « Ta manière d'argumenter » — équilibre pour/contre, nuancé ou univoque, motifs visibles. Utilise « souvent », « plutôt », « fréquemment » plutôt que des verdicts.
-3. « Élargir le regard » — suggestion concrète et amicale : quelle perspective/catégorie explorer ensuite.
+Aborde, dans cet ordre : (1) ses thématiques et ce qui les relie, (2) sa manière d'argumenter — équilibre pour/contre, nuancé vs. univoque, motifs — avec « souvent »/« plutôt » plutôt que des verdicts, (3) une suggestion concrète et amicale : quelle perspective/catégorie explorer ensuite.
 
-Maximum 220 mots au total. Pas de titre, pas d'en-têtes — seulement les trois paragraphes.`;
+Ne répète pas les chiffres ci-dessus. Pas de titre, pas d'en-têtes.
+${DENSITY.fr[step]}`;
 		}
 	},
 	es: {
@@ -220,7 +249,7 @@ Maximum 220 mots au total. Pas de titre, pas d'en-têtes — seulement les trois
 			'Aún no hay actividad — en cuanto crees tesis, argumentes o votes, aparecerá aquí tu informe reflexivo.',
 		unknownThesis: '(tesis desconocida)',
 		noOwnArgs: '  (aún no hay argumentos propios)',
-		buildPrompt(stats) {
+		buildPrompt(stats, step) {
 			const cats = stats.dominant_categories.map((c) => `${c.name} (${c.count})`).join(', ') || '—';
 			const sample = stats.sample_own_arguments.length
 				? stats.sample_own_arguments
@@ -241,15 +270,13 @@ Usa estos hechos:
 - Total de tesis con las que ha interactuado: ${stats.engaged_theses}
 - Áreas temáticas más frecuentes: ${cats}
 
-Ejemplos de sus propios argumentos:
+Ejemplos de sus propios argumentos (los más recientes primero — da más peso a los elementos recientes):
 ${sample}
 
-Escribe 3 párrafos:
-1. «Tus temas» — qué campos dominan, qué los conecta temáticamente.
-2. «Tu forma de argumentar» — equilibrio a favor/en contra, si es matizado o unilateral, si emergen patrones. Usa expresiones como «a menudo», «suele», «con frecuencia» en lugar de veredictos.
-3. «Ampliar la mirada» — sugerencia concreta y amable sobre qué perspectiva/categoría mirar a continuación.
+Aborda, en este orden: (1) sus temas y qué los conecta, (2) su forma de argumentar — equilibrio a favor/en contra, matizado vs. unilateral, patrones — con expresiones como «a menudo»/«suele» en lugar de veredictos, (3) una sugerencia concreta y amable sobre qué perspectiva/categoría mirar a continuación.
 
-Máximo 220 palabras en total. Sin título, sin encabezados — solo los tres párrafos.`;
+No repitas las cifras anteriores. Sin título, sin encabezados.
+${DENSITY.es[step]}`;
 		}
 	}
 };
@@ -260,7 +287,8 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 	const copy = STANDPOINT_COPY[locale] ?? STANDPOINT_COPY[baseLocale];
 
 	const force = url.searchParams.get('force') === 'true';
-	const cacheKey = `${user_id}::${locale}`;
+	const step = registerStep(Number(url.searchParams.get('register')));
+	const cacheKey = `${user_id}::${locale}::${step}`;
 	const cached = cache.get(cacheKey);
 	if (!force && cached && Date.now() - cached.generated_at < REPORT_TTL_MS) {
 		return json({ ...(cached.body as object), cached: true });
@@ -280,7 +308,7 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 		return json(body);
 	}
 
-	const prompt = copy.buildPrompt(stats);
+	const prompt = copy.buildPrompt(stats, step);
 	const result = await generate(prompt, {
 		system: copy.system
 	});

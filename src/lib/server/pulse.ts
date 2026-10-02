@@ -10,14 +10,57 @@ import {
 } from '$lib/stores/data';
 import { generate } from './llm';
 import { baseLocale, type Locale } from '$lib/paraglide/runtime';
+import { FIB_ARGUMENTS } from '$lib/models/fibonacci';
 
 const PULSE_TTL_MS = 24 * 60 * 60 * 1000;
+
+// Register steps mirror FIB_ARGUMENTS notches (0 = terse … last = full).
+const REGISTER_STEPS = FIB_ARGUMENTS.length; // 5
 
 interface CachedPulse {
 	generated_at: number;
 	body: PulseBody;
 }
-const _cached = new Map<Locale, CachedPulse>();
+// Keyed by `${locale}::${step}` so each register variant caches independently.
+const _cached = new Map<string, CachedPulse>();
+
+function pulseKey(locale: Locale, step: number): string {
+	return `${locale}::${step}`;
+}
+
+// Per-locale density directives, one per register step. Appended to the pulse
+// prompt so the reader's amount slider drives text length. The server owns this
+// mapping — the client only forwards the raw slider value.
+const DENSITY: Record<Locale, string[]> = {
+	en: [
+		'Write ONE sentence only. Telegraphic.',
+		'Write 2 short sentences.',
+		'Write 3 short paragraphs, 1 sentence each.',
+		'Write 3 paragraphs, 1-2 sentences each.',
+		'Write 3 full paragraphs, up to ~100 words total.'
+	],
+	de: [
+		'Schreibe NUR einen Satz. Telegrammstil.',
+		'Schreibe 2 kurze Sätze.',
+		'Schreibe 3 kurze Absätze, je 1 Satz.',
+		'Schreibe 3 Absätze, je 1-2 Sätze.',
+		'Schreibe 3 volle Absätze, insgesamt bis ca. 100 Wörter.'
+	],
+	fr: [
+		'Écris UNE seule phrase. Style télégraphique.',
+		'Écris 2 phrases courtes.',
+		'Écris 3 courts paragraphes, 1 phrase chacun.',
+		'Écris 3 paragraphes, 1 à 2 phrases chacun.',
+		'Écris 3 paragraphes complets, jusqu’à ~100 mots au total.'
+	],
+	es: [
+		'Escribe UNA sola frase. Estilo telegráfico.',
+		'Escribe 2 frases cortas.',
+		'Escribe 3 párrafos cortos, 1 frase cada uno.',
+		'Escribe 3 párrafos, 1 o 2 frases cada uno.',
+		'Escribe 3 párrafos completos, hasta ~100 palabras en total.'
+	]
+};
 
 interface CategoryPulse {
 	name: string;
@@ -118,7 +161,7 @@ function aggregate(): PulseStats {
 interface PulseCopy {
 	system: string;
 	empty: string;
-	buildPrompt: (stats: PulseStats) => string;
+	buildPrompt: (stats: PulseStats, step: number) => string;
 }
 
 const PULSE_COPY: Record<Locale, PulseCopy> = {
@@ -126,7 +169,7 @@ const PULSE_COPY: Record<Locale, PulseCopy> = {
 		system:
 			'You observe an English-language debate platform. Short, crisp sentences. Descriptive, not judgmental. No emojis, no numbers, no bullet lists.',
 		empty: 'Nothing happening in the community yet.',
-		buildPrompt(stats) {
+		buildPrompt(stats, step) {
 			const hotList = stats.hot_theses.map((t, i) => `${i + 1}. "${t.title}"`).join('\n') || '—';
 			const complexList = stats.complex_theses.map((t, i) => `${i + 1}. "${t.title}"`).join('\n') || '—';
 			const catList = stats.driving_categories.map((c) => c.name).join(', ') || '—';
@@ -140,19 +183,17 @@ ${complexList}
 
 Categories with most activity: ${catList}
 
-Write exactly 3 paragraphs, each 1-2 sentences:
-1. What's hot right now — the common thread in content.
-2. Where it gets complex — which thesis/theses show real contention.
-3. A look ahead — one sentence on an under-represented area.
+Cover: (1) what's hot right now — the common thread in content, (2) where it gets complex — which thesis/theses show real contention, (3) a look ahead — an under-represented area.
 
-Do not repeat any numbers (they are shown alongside). No headings. Maximum 100 words total.`;
+Do not repeat any numbers (they are shown alongside). No headings.
+${DENSITY.en[step]}`;
 		}
 	},
 	de: {
 		system:
 			'Du beobachtest eine deutschsprachige Debatten-Plattform. Kurze, knackige Sätze. Beschreibend, nicht wertend. Keine Emojis, keine Zahlen, keine Aufzählungen.',
 		empty: 'Noch nichts los in der Community.',
-		buildPrompt(stats) {
+		buildPrompt(stats, step) {
 			const hotList = stats.hot_theses.map((t, i) => `${i + 1}. "${t.title}"`).join('\n') || '—';
 			const complexList = stats.complex_theses.map((t, i) => `${i + 1}. "${t.title}"`).join('\n') || '—';
 			const catList = stats.driving_categories.map((c) => c.name).join(', ') || '—';
@@ -166,19 +207,17 @@ ${complexList}
 
 Kategorien mit meiste Aktivität: ${catList}
 
-Schreibe genau 3 Absätze, jeweils 1-2 Sätze:
-1. Was gerade heiß ist — inhaltlicher Nenner.
-2. Wo es komplex wird — welche These(n) zeigen echte Kontroverse.
-3. Blick nach vorn — ein Satz zu einem unterrepräsentierten Feld.
+Behandle: (1) Was gerade heiß ist — inhaltlicher Nenner, (2) wo es komplex wird — welche These(n) zeigen echte Kontroverse, (3) Blick nach vorn — ein unterrepräsentiertes Feld.
 
-Keine Zahlen wiederholen (die stehen daneben). Keine Überschriften. Maximum 100 Wörter insgesamt.`;
+Keine Zahlen wiederholen (die stehen daneben). Keine Überschriften.
+${DENSITY.de[step]}`;
 		}
 	},
 	fr: {
 		system:
 			"Tu observes une plateforme de débat francophone. Phrases courtes et nettes. Descriptif, pas de jugement. Pas d'emojis, pas de chiffres, pas de listes à puces.",
 		empty: 'Rien ne bouge encore dans la communauté.',
-		buildPrompt(stats) {
+		buildPrompt(stats, step) {
 			const hotList = stats.hot_theses.map((t, i) => `${i + 1}. « ${t.title} »`).join('\n') || '—';
 			const complexList = stats.complex_theses.map((t, i) => `${i + 1}. « ${t.title} »`).join('\n') || '—';
 			const catList = stats.driving_categories.map((c) => c.name).join(', ') || '—';
@@ -192,19 +231,17 @@ ${complexList}
 
 Catégories les plus actives : ${catList}
 
-Écris exactement 3 paragraphes, 1 à 2 phrases chacun :
-1. Ce qui est chaud en ce moment — le fil conducteur des contenus.
-2. Où cela se complique — quelle(s) thèse(s) montrent une vraie contestation.
-3. Un regard vers l'avant — une phrase sur un domaine sous-représenté.
+Aborde : (1) ce qui est chaud en ce moment — le fil conducteur des contenus, (2) où cela se complique — quelle(s) thèse(s) montrent une vraie contestation, (3) un regard vers l'avant — un domaine sous-représenté.
 
-Ne répète aucun chiffre (ils sont affichés à côté). Pas de titres. Maximum 100 mots au total.`;
+Ne répète aucun chiffre (ils sont affichés à côté). Pas de titres.
+${DENSITY.fr[step]}`;
 		}
 	},
 	es: {
 		system:
 			'Observas una plataforma de debate en español. Frases cortas y nítidas. Descriptivo, no valorativo. Sin emojis, sin cifras, sin listas.',
 		empty: 'Aún no hay movimiento en la comunidad.',
-		buildPrompt(stats) {
+		buildPrompt(stats, step) {
 			const hotList = stats.hot_theses.map((t, i) => `${i + 1}. «${t.title}»`).join('\n') || '—';
 			const complexList = stats.complex_theses.map((t, i) => `${i + 1}. «${t.title}»`).join('\n') || '—';
 			const catList = stats.driving_categories.map((c) => c.name).join(', ') || '—';
@@ -218,18 +255,29 @@ ${complexList}
 
 Categorías con más actividad: ${catList}
 
-Escribe exactamente 3 párrafos, 1 o 2 frases cada uno:
-1. Qué está caliente ahora — el hilo común del contenido.
-2. Dónde se vuelve complejo — qué tesis muestran verdadera disputa.
-3. Una mirada hacia adelante — una frase sobre un área infrarrepresentada.
+Aborda: (1) qué está caliente ahora — el hilo común del contenido, (2) dónde se vuelve complejo — qué tesis muestran verdadera disputa, (3) una mirada hacia adelante — un área infrarrepresentada.
 
-No repitas ninguna cifra (se muestran al lado). Sin encabezados. Máximo 100 palabras en total.`;
+No repitas ninguna cifra (se muestran al lado). Sin encabezados.
+${DENSITY.es[step]}`;
 		}
 	}
 };
 
-export async function generatePulse(locale: Locale = baseLocale): Promise<PulseBody> {
+export async function generatePulse(
+	locale: Locale = baseLocale,
+	step: number = REGISTER_STEPS - 1
+): Promise<PulseBody> {
 	const stats = aggregate();
+	return generatePulseFromStats(stats, locale, step);
+}
+
+// Generate one register variant from already-aggregated stats. Split out so the
+// batch job can aggregate once and generate all 5 variants without re-scanning.
+async function generatePulseFromStats(
+	stats: PulseStats,
+	locale: Locale,
+	step: number
+): Promise<PulseBody> {
 	const copy = PULSE_COPY[locale] ?? PULSE_COPY[baseLocale];
 
 	if (stats.total_theses === 0) {
@@ -241,7 +289,7 @@ export async function generatePulse(locale: Locale = baseLocale): Promise<PulseB
 		};
 	}
 
-	const prompt = copy.buildPrompt(stats);
+	const prompt = copy.buildPrompt(stats, step);
 	const result = await generate(prompt, {
 		system: copy.system,
 		maxTokens: 300
@@ -257,15 +305,32 @@ export async function generatePulse(locale: Locale = baseLocale): Promise<PulseB
 	};
 }
 
-export function getCachedPulse(locale: Locale = baseLocale): { body: PulseBody; generated_at: number } | null {
-	const hit = _cached.get(locale);
+export function getCachedPulse(
+	locale: Locale = baseLocale,
+	step: number = REGISTER_STEPS - 1
+): { body: PulseBody; generated_at: number } | null {
+	const hit = _cached.get(pulseKey(locale, step));
 	if (!hit) return null;
 	if (Date.now() - hit.generated_at > PULSE_TTL_MS) return null;
 	return hit;
 }
 
-export async function refreshPulseCache(locale: Locale = baseLocale): Promise<PulseBody> {
-	const body = await generatePulse(locale);
-	_cached.set(locale, { generated_at: Date.now(), body });
+export async function refreshPulseCache(
+	locale: Locale = baseLocale,
+	step: number = REGISTER_STEPS - 1
+): Promise<PulseBody> {
+	const body = await generatePulse(locale, step);
+	_cached.set(pulseKey(locale, step), { generated_at: Date.now(), body });
 	return body;
+}
+
+// Batch pre-compute all register variants for a locale. Aggregates once, then
+// generates one text per FIB_ARGUMENTS notch — this is what the daily background
+// job calls so every slider position serves warm from cache.
+export async function refreshAllPulseVariants(locale: Locale = baseLocale): Promise<void> {
+	const stats = aggregate();
+	for (let step = 0; step < REGISTER_STEPS; step++) {
+		const body = await generatePulseFromStats(stats, locale, step);
+		_cached.set(pulseKey(locale, step), { generated_at: Date.now(), body });
+	}
 }

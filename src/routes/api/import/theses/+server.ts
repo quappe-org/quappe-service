@@ -1,7 +1,6 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { importThesis, listImportedTheses, purgeImportedTheses, type ImportThesisInput } from '$lib/stores/data';
-import { DEFAULT_CATEGORIES } from '$lib/models/types';
 import { logger } from '$lib/stores/logger';
 
 // Bulk import endpoint for issue-tracker bridges. Not part of the user flow:
@@ -29,13 +28,15 @@ function authorized(request: Request): boolean {
 	return request.headers.get('x-import-secret') === secret;
 }
 
-// Keep only categories the platform knows; fall back to 'other' if none match.
+// Bridge imports carry their own category axis (e.g. the source repo), which is
+// deliberately NOT constrained to DEFAULT_CATEGORIES — the feed derives its
+// filter tiles from whatever categories are actually present. Normalize shape
+// only (trim/lowercase/de-dupe); fall back to 'other' when nothing usable came.
 function normalizeCategories(cats: string[] | undefined): string[] {
-	const allowed = new Set(DEFAULT_CATEGORIES.map((c) => c.toLowerCase()));
 	const out: string[] = [];
 	for (const c of cats ?? []) {
 		const lc = String(c).trim().toLowerCase();
-		if (lc && allowed.has(lc) && !out.includes(lc)) out.push(lc);
+		if (lc && !out.includes(lc)) out.push(lc);
 	}
 	return out.length > 0 ? out : ['other'];
 }

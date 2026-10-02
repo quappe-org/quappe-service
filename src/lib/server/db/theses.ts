@@ -29,6 +29,17 @@ export function dbGetAllTheses(): Thesis[] {
 	return assembleTheses(rows);
 }
 
+// Distinct categories actually present across all theses, unioned out of the
+// categories_json array column via json_each. Feeds the /api/categories filter
+// list, so it reflects what exists (imported repo names + domain topics) rather
+// than a fixed whitelist. Sorted for stable ordering.
+export function dbGetDistinctCategories(): string[] {
+	const rows = prepare<{ value: string }>(
+		`SELECT DISTINCT value FROM theses, json_each(theses.categories_json) ORDER BY value`
+	).all() as { value: string }[];
+	return rows.map((r) => r.value);
+}
+
 export function dbGetHotTheses(): Thesis[] {
 	const rows = prepare<ThesisRow>(
 		`SELECT * FROM theses WHERE lifecycle_state IN ('seedling','discussed','contested','crystallized')`
@@ -85,6 +96,8 @@ export function dbUpdateThesisFields(
 		title?: string;
 		description?: string;
 		categories?: string[];
+		description_simple?: string | null;
+		description_dense?: string | null;
 		hashtags?: string[];
 		archived?: boolean;
 		lang?: string | null;
@@ -104,6 +117,14 @@ export function dbUpdateThesisFields(
 	if (fields.categories !== undefined) {
 		sets.push('categories_json = @categories_json');
 		params.categories_json = JSON.stringify(fields.categories);
+	}
+	if (fields.description_simple !== undefined) {
+		sets.push('description_simple = @description_simple');
+		params.description_simple = fields.description_simple;
+	}
+	if (fields.description_dense !== undefined) {
+		sets.push('description_dense = @description_dense');
+		params.description_dense = fields.description_dense;
 	}
 	if (fields.hashtags !== undefined) {
 		sets.push('hashtags_json = @hashtags_json');

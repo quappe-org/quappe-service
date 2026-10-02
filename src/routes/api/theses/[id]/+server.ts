@@ -3,6 +3,7 @@ import type { RequestHandler } from './$types';
 import { getThesisById, updateThesis, deleteThesis, computeVoteSummary, setThesisLang } from '$lib/stores/data';
 import { checkLength, checkCategories } from '$lib/server/limits';
 import { detectLanguage } from '$lib/server/language-detect';
+import { checkRegisterDrift } from '$lib/server/register-drift';
 
 export const GET: RequestHandler = async ({ params }) => {
 	const thesis = getThesisById(params.id);
@@ -18,7 +19,7 @@ export const GET: RequestHandler = async ({ params }) => {
 
 export const PUT: RequestHandler = async ({ params, request, locals }) => {
 	const body = await request.json();
-	const { title, description, categories } = body;
+	const { title, description, categories, description_simple, description_dense } = body;
 
 	if (title !== undefined) {
 		const err = checkLength('thesis_title', title);
@@ -32,8 +33,40 @@ export const PUT: RequestHandler = async ({ params, request, locals }) => {
 		const err = checkCategories(categories);
 		if (err) return err;
 	}
+	// Register variants: validate length only when a non-empty value is present
+	// (an empty string clears the variant).
+	for (const val of [description_simple, description_dense]) {
+		if (val !== undefined && val !== null && val !== '') {
+			const err = checkLength('thesis_description', val);
+			if (err) return err;
+		}
+	}
 
-	const result = updateThesis(params.id, { title, description, categories }, locals.user_id);
+	// Drift-block: a register variant must stay close to the prose meaning. Use
+	// the incoming description when the caller is also changing it, otherwise the
+	// stored one, so the comparison is always against the current prose.
+	const hasVariant = [description_simple, description_dense].some((v) => v !== undefined && v !== null && v !== '');
+	if (hasVariant) {
+		const existing = getThesisById(params.id);
+		const prose = description ?? existing?.description ?? '';
+		for (const val of [description_simple, description_dense]) {
+			if (val !== undefined && val !== null && val !== '') {
+				const drift = await checkRegisterDrift(prose, val);
+				if (!drift.ok) {
+					return json(
+						{ error: 'Register variant drifted too far from the description', drift_score: drift.score },
+						{ status: 422 }
+					);
+				}
+			}
+		}
+	}
+
+	const result = updateThesis(
+		params.id,
+		{ title, description, categories, description_simple, description_dense },
+		locals.user_id
+	);
 
 	if ('error' in result) {
 		return json({ error: result.error }, { status: 403 });

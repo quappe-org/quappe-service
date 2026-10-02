@@ -39,7 +39,8 @@ function migrate(db: Database.Database): void {
 		`ALTER TABLE arguments ADD COLUMN hashtags_json TEXT`,
 		`ALTER TABLE theses    ADD COLUMN description_simple TEXT`,
 		`ALTER TABLE theses    ADD COLUMN description_dense TEXT`,
-		`ALTER TABLE theses    ADD COLUMN external_ref TEXT`
+		`ALTER TABLE theses    ADD COLUMN external_ref TEXT`,
+		`ALTER TABLE arguments ADD COLUMN linked_thesis_id TEXT REFERENCES theses(id) ON DELETE CASCADE`
 	];
 	for (const sql of alters) {
 		try {

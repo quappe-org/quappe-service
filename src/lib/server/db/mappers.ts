@@ -1,4 +1,4 @@
-import type { Argument, Thesis, Vote } from '../../models/types.ts';
+import type { Argument, Thesis, ThesisEdge, Vote } from '../../models/types.ts';
 
 // ---- Row shapes (what the SQL rows look like) ----
 
@@ -31,6 +31,7 @@ export interface ArgumentRow {
 	categories_json: string | null;
 	hashtags_json: string | null;
 	forked_from_id: string | null;
+	linked_thesis_id: string | null;
 	created_at: string;
 	updated_at: string;
 	author_id: string;
@@ -46,6 +47,14 @@ export interface VoteRow {
 	cast_at: string;
 }
 
+export interface ThesisEdgeRow {
+	id: string;
+	source_thesis_id: string;
+	target_thesis_id: string;
+	author_id: string;
+	created_at: string;
+}
+
 // ---- Row → domain ----
 
 export function rowToVote(row: VoteRow): Vote {
@@ -54,6 +63,16 @@ export function rowToVote(row: VoteRow): Vote {
 		type: row.vote_type as Vote['type'],
 		weight: row.weight,
 		cast_at: row.cast_at
+	};
+}
+
+export function rowToThesisEdge(row: ThesisEdgeRow): ThesisEdge {
+	return {
+		id: row.id,
+		source_thesis_id: row.source_thesis_id,
+		target_thesis_id: row.target_thesis_id,
+		author_id: row.author_id,
+		created_at: row.created_at
 	};
 }
 
@@ -93,6 +112,7 @@ export function rowToArgument(row: ArgumentRow, votes: Vote[]): Argument {
 		attributes: JSON.parse(row.attributes_json),
 		votes,
 		forked_from_id: row.forked_from_id ?? undefined,
+		linked_thesis_id: row.linked_thesis_id ?? undefined,
 		categories: row.categories_json ? JSON.parse(row.categories_json) : undefined,
 		hashtags: row.hashtags_json ? JSON.parse(row.hashtags_json) : undefined,
 		meta: {
@@ -138,10 +158,21 @@ export function argumentInsertParams(a: Argument): ArgumentRow {
 		categories_json: a.categories ? JSON.stringify(a.categories) : null,
 		hashtags_json: a.hashtags ? JSON.stringify(a.hashtags) : null,
 		forked_from_id: a.forked_from_id ?? null,
+		linked_thesis_id: a.linked_thesis_id ?? null,
 		created_at: a.meta.created_at,
 		updated_at: a.meta.updated_at,
 		author_id: a.meta.author_id,
 		location: a.meta.location ?? null
+	};
+}
+
+export function thesisEdgeInsertParams(e: ThesisEdge): ThesisEdgeRow {
+	return {
+		id: e.id,
+		source_thesis_id: e.source_thesis_id,
+		target_thesis_id: e.target_thesis_id,
+		author_id: e.author_id,
+		created_at: e.created_at
 	};
 }
 

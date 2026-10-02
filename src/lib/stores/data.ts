@@ -2,7 +2,7 @@
 // (src/lib/server/db/*); the in-memory derived caches (heat, arg-counts,
 // activity) live here and are invalidated on every write via bumpVersion().
 
-import type { Thesis, Argument, Vote, VoteSummary, LifecycleState } from '../models/types.ts';
+import type { Thesis, Argument, Vote, VoteSummary, LifecycleState, ThesisEdge } from '../models/types.ts';
 import { computeLifecycle } from '../models/lifecycle.ts';
 import { normalizeVoteWeight } from '../models/fibonacci.ts';
 import { logger } from './logger.ts';
@@ -12,6 +12,7 @@ import { withTransaction, dbWipeAll } from '../server/db/index.ts';
 import {
 	dbDeleteThesis,
 	dbGetAllTheses,
+	dbGetDistinctCategories,
 	dbGetHotTheses,
 	dbGetThesesByAuthor,
 	dbGetThesesMissingLang,
@@ -35,6 +36,7 @@ import {
 	dbDeleteArgument,
 	dbGetAllArguments,
 	dbGetArgumentById,
+	dbGetArgumentByLinkedThesis,
 	dbGetArgumentIdsForThesis,
 	dbGetArgumentsByAuthor,
 	dbGetArgumentsForThesis,
@@ -54,6 +56,13 @@ import {
 	dbUpsertVote
 } from '../server/db/votes.ts';
 import { dbGetAllEmbeddings, dbUpsertEmbedding } from '../server/db/embeddings.ts';
+import {
+	dbDeleteThesisEdge,
+	dbGetEdgeById,
+	dbGetEdgeBySourceTarget,
+	dbGetEdgesForTarget,
+	dbInsertThesisEdge
+} from '../server/db/edges.ts';
 
 // ---- Embedding warm-cache ----
 // Loaded on first access from DB, kept in-memory for fast semantic search.
@@ -172,6 +181,11 @@ export function getAllTheses(): Thesis[] {
 
 export function getHotTheses(): Thesis[] {
 	return dbGetHotTheses();
+}
+
+// Distinct categories present across all theses — the feed's filter axis.
+export function getDistinctCategories(): string[] {
+	return dbGetDistinctCategories();
 }
 
 export function getThesisById(id: string): Thesis | undefined {
@@ -308,7 +322,7 @@ export function resetAllData(keepSettings = true): void {
 
 export function updateThesis(
 	id: string,
-	updates: Partial<Pick<Thesis, 'title' | 'description' | 'categories'>>,
+	updates: Partial<Pick<Thesis, 'title' | 'description' | 'categories' | 'description_simple' | 'description_dense'>>,
 	user_id?: string
 ): Thesis | { error: string } {
 	const thesis = dbGetThesisById(id);
@@ -324,6 +338,8 @@ export function updateThesis(
 		title: updates.title,
 		description: updates.description,
 		categories: updates.categories,
+		description_simple: updates.description_simple,
+		description_dense: updates.description_dense,
 		hashtags: textChanged ? extractHashtagsFrom(nextTitle, nextDesc) : undefined,
 		updated_at
 	});
@@ -673,7 +689,10 @@ export function getCrystallizedTheses(limit: number = 10): Thesis[] {
 // ---- Argument operations ----
 
 export function getArgumentsForThesis(thesis_id: string): Argument[] {
-	return dbGetArgumentsForThesis(thesis_id);
+	// Companion rows for linked theses (linked_thesis_id set) are surfaced via
+	// GET /edges as tiles, not as native arguments — exclude them here so a
+	// linked thesis never appears twice in the argument list.
+	return dbGetArgumentsForThesis(thesis_id).filter((a) => !a.linked_thesis_id);
 }
 
 export function getArgumentById(id: string): Argument | undefined {
@@ -894,6 +913,88 @@ function getArgumentGroupIds(argument: Argument): string[] {
 // stays complete.
 export function hasUserVotedOnThesis(thesis_id: string, user_id: string): boolean {
 	return dbGetUserVoteOn('thesis', thesis_id, user_id) !== undefined;
+}
+
+// ---- Thesis edges (a thesis linked "as an argument" onto another thesis) ----
+// Stanceless directed link B (source) → A (target). Kept out of the votes table
+// so it can never feed vote scoring. Every write bumps the derived-cache version.
+
+export function createThesisEdge(
+	source_thesis_id: string,
+	target_thesis_id: string,
+	author_id: string
+): ThesisEdge {
+	const edge: ThesisEdge = {
+		id: generateId(),
+		source_thesis_id,
+		target_thesis_id,
+		author_id,
+		created_at: nowIso()
+	};
+	dbInsertThesisEdge(edge);
+	// Companion argument: the linked thesis IS an argument on the target, so it
+	// gets a real (votable) argument row. Inserted directly — NOT via
+	// createArgument, which would enforce prose/fork rules, auto-upvote, and
+	// queue an embedding. The row carries no content (display text is the linked
+	// thesis title) and stays stanceless (no auto-vote).
+	const companion: Argument = {
+		id: generateId(),
+		thesis_id: target_thesis_id,
+		content: '',
+		attributes: [],
+		votes: [],
+		linked_thesis_id: source_thesis_id,
+		meta: { created_at: nowIso(), updated_at: nowIso(), author_id }
+	};
+	dbInsertArgument(companion);
+	reevaluateLifecycle(target_thesis_id);
+	bumpVersion();
+	return edge;
+}
+
+// Hydrated read: each edge paired with its loaded source thesis and its
+// companion argument (which carries the vote_summary for the linked-thesis
+// tile). Edges whose source thesis no longer exists are skipped (defensive —
+// CASCADE should prevent this).
+export function getThesisEdgesForTarget(
+	target_thesis_id: string
+): { edge: ThesisEdge; thesis: Thesis; argument?: Argument }[] {
+	const out: { edge: ThesisEdge; thesis: Thesis; argument?: Argument }[] = [];
+	for (const edge of dbGetEdgesForTarget(target_thesis_id)) {
+		const thesis = dbGetThesisById(edge.source_thesis_id);
+		if (thesis) {
+			const argument = dbGetArgumentByLinkedThesis(target_thesis_id, edge.source_thesis_id);
+			out.push({ edge, thesis, argument });
+		}
+	}
+	return out;
+}
+
+export function getThesisEdgeBySourceTarget(
+	source_thesis_id: string,
+	target_thesis_id: string
+): ThesisEdge | undefined {
+	return dbGetEdgeBySourceTarget(source_thesis_id, target_thesis_id);
+}
+
+export function getThesisEdgeById(id: string): ThesisEdge | undefined {
+	return dbGetEdgeById(id);
+}
+
+export function deleteThesisEdge(id: string): boolean {
+	// Remove the companion argument (and its votes) alongside the edge, so no
+	// orphan votable row survives the unlink.
+	const edge = dbGetEdgeById(id);
+	if (edge) {
+		const companion = dbGetArgumentByLinkedThesis(edge.target_thesis_id, edge.source_thesis_id);
+		if (companion) dbDeleteArgument(companion.id); // dbDeleteArgument also clears its votes
+	}
+	const ok = dbDeleteThesisEdge(id);
+	if (ok) {
+		if (edge) reevaluateLifecycle(edge.target_thesis_id);
+		bumpVersion();
+	}
+	return ok;
 }
 
 // The user's thesis-level vote type on a given thesis (support/reject/neutral),

@@ -16,6 +16,7 @@ import { detectLanguage } from '$lib/server/language-detect';
 import { DEFAULT_CATEGORIES } from '$lib/models/types';
 import { checkLength, checkCategories, checkRate, getClientIp } from '$lib/server/limits';
 import { checkThesisBudget } from '$lib/server/budget';
+import { checkRegisterDrift } from '$lib/server/register-drift';
 
 export const GET: RequestHandler = async ({ url }) => {
 	seedData();
@@ -92,6 +93,21 @@ export const POST: RequestHandler = async ({ request, getClientAddress, locals }
 	// Server-side daily budget enforcement (authority; client store is a mirror).
 	const budgetErr = checkThesisBudget(locals.user_id);
 	if (budgetErr) return budgetErr;
+
+	// Drift-block: a register variant may reword the prose but must not change
+	// its meaning. Reject (422) anything that drifts below the configured
+	// similarity threshold before it can be persisted.
+	for (const val of [description_simple, description_dense]) {
+		if (val !== undefined && val !== null && val !== '') {
+			const drift = await checkRegisterDrift(description, val);
+			if (!drift.ok) {
+				return json(
+					{ error: 'Register variant drifted too far from the description', drift_score: drift.score },
+					{ status: 422 }
+				);
+			}
+		}
+	}
 
 	const thesis = createThesis(title, description, categories, locals.user_id, location, {
 		description_simple: description_simple || undefined,

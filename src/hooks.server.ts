@@ -3,7 +3,7 @@ import { json } from '@sveltejs/kit';
 import { logger } from '$lib/stores/logger';
 import { warmupModel, embed, isModelWarm } from '$lib/server/embeddings';
 import { getAllTheses, setThesisEmbedding, hasThesisEmbedding, getThesesMissingLang, setThesisLang, getThesesMissingHashtags, setThesisHashtags, getArgumentsMissingHashtags, setArgumentHashtags } from '$lib/stores/data';
-import { refreshPulseCache } from '$lib/server/pulse';
+import { refreshAllPulseVariants } from '$lib/server/pulse';
 import { categorizeUncategorizedArguments } from '$lib/server/argument-categorization';
 import { isLlmAvailable } from '$lib/server/llm';
 import { detectLanguage } from '$lib/server/language-detect';
@@ -76,12 +76,8 @@ async function pulseLoop() {
 	// Run once immediately
 	while (true) {
 		try {
-			const r = await refreshPulseCache();
-			if (r.llm.ok) {
-				logger.info('llm', 'Pulse cache refreshed', { model: r.llm.model });
-			} else {
-				logger.warn('llm', 'Pulse refresh: LLM unavailable', { error: r.llm.error });
-			}
+			await refreshAllPulseVariants();
+			logger.info('llm', 'Pulse cache refreshed (all register variants)');
 		} catch (err) {
 			logger.warn('llm', 'Pulse refresh threw', { error: (err as Error)?.message });
 		}

@@ -4,8 +4,8 @@
 	"version": "0.5.2",
 	"type": "module",
 	"scripts": {
-		"dev": "vite dev --port 5273",
-		"dev:all": "concurrently -k -n ollama,vite -c magenta,cyan \"ollama serve\" \"vite dev --port 5273\"",
+		"dev": "node --env-file-if-exists=.env node_modules/vite/bin/vite.js dev --port 5273",
+		"dev:all": "concurrently -k -n ollama,vite -c magenta,cyan \"ollama serve\" \"node --env-file-if-exists=.env node_modules/vite/bin/vite.js dev --port 5273\"",
 		"ollama": "ollama serve",
 		"build": "vite build",
 		"preview": "vite preview",

@@ -31,6 +31,11 @@ CREATE TABLE IF NOT EXISTS arguments (
   categories_json TEXT,
   hashtags_json   TEXT,
   forked_from_id  TEXT REFERENCES arguments(id) ON DELETE SET NULL,
+  -- If set, this argument IS a thesis linked "as an argument" (companion row for
+  -- the thesis_edge B→A). content stays empty; the displayed text is the linked
+  -- thesis title. Exists so a linked thesis is votable via the normal argument
+  -- vote path. CASCADE removes it when the linked thesis (B) is deleted.
+  linked_thesis_id TEXT REFERENCES theses(id) ON DELETE CASCADE,
   created_at      TEXT NOT NULL,
   updated_at      TEXT NOT NULL,
   author_id       TEXT NOT NULL,
@@ -39,6 +44,19 @@ CREATE TABLE IF NOT EXISTS arguments (
 CREATE INDEX IF NOT EXISTS idx_arguments_thesis      ON arguments(thesis_id);
 CREATE INDEX IF NOT EXISTS idx_arguments_author      ON arguments(author_id);
 CREATE INDEX IF NOT EXISTS idx_arguments_forked_from ON arguments(forked_from_id);
+
+-- User-authored directed link: source thesis B appears "as an argument" on
+-- target thesis A. Stanceless (direction lives in the user's vote on A, never
+-- here). Kept in its own table so it structurally cannot feed vote scoring.
+CREATE TABLE IF NOT EXISTS thesis_edges (
+  id                TEXT NOT NULL UNIQUE,
+  source_thesis_id  TEXT NOT NULL REFERENCES theses(id) ON DELETE CASCADE,
+  target_thesis_id  TEXT NOT NULL REFERENCES theses(id) ON DELETE CASCADE,
+  author_id         TEXT NOT NULL,
+  created_at        TEXT NOT NULL,
+  PRIMARY KEY (source_thesis_id, target_thesis_id)
+);
+CREATE INDEX IF NOT EXISTS idx_thesis_edges_target ON thesis_edges(target_thesis_id);
 
 CREATE TABLE IF NOT EXISTS votes (
   target_type TEXT NOT NULL CHECK (target_type IN ('thesis','argument')),

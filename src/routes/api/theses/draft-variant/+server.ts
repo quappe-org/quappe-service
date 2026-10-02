@@ -10,6 +10,7 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { generate, isLlmAvailable } from '$lib/server/llm';
 import { checkLength, checkRate, getClientIp } from '$lib/server/limits';
+import { checkRegisterDrift } from '$lib/server/register-drift';
 
 const INSTRUCTION: Record<string, string> = {
 	simple:
@@ -58,7 +59,11 @@ export const POST: RequestHandler = async ({ request, getClientAddress, locals }
 		if (!parsed.description) {
 			return json({ error: 'Draft missing description' }, { status: 502 });
 		}
-		return json({ description: parsed.description, variant });
+		// Advisory only: the author reviews the draft before saving. We surface
+		// how far it drifted from the prose so the form can warn; the hard 422
+		// block lives on the POST/PUT that actually persists.
+		const drift = await checkRegisterDrift(description ?? '', parsed.description);
+		return json({ description: parsed.description, variant, drift });
 	} catch {
 		return json({ error: 'Draft JSON parse failed' }, { status: 502 });
 	}
